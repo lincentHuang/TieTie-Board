@@ -41,3 +41,12 @@ example
 # generated native folders
 /ios
 /android
+
+# 原生專案由 expo prebuild 產生
+/ios
+/android
+
+# Firebase
+.env
+firebase-debug.log
+firestore-debug.log

@@ -1,0 +1,62 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    function isMember(gid) {
+      return exists(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid));
+    }
+
+    function onlyChanges(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // 狀態、標籤可以沒有（舊資料），有的話格式要對
+    function validOrganize(d) {
+      return (!('status' in d) || d.status in ['none', 'todo', 'doing', 'done'])
+        && (!('tags' in d) || (d.tags is list && d.tags.size() <= 5));
+    }
+
+    match /groups/{gid} {
+      // 邀請碼就是鑰匙：知道碼才讀得到群組，不開放列出所有群組
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && gid.size() == 6
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      match /members/{uid} {
+        allow read: if signedIn() && isMember(gid);
+        // 只能加入 / 改名 / 離開自己
+        allow create, update, delete: if signedIn() && request.auth.uid == uid;
+      }
+
+      match /items/{itemId} {
+        allow read: if signedIn() && isMember(gid);
+
+        allow create: if signedIn() && isMember(gid)
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.type in ['note', 'image', 'sticker']
+          && request.resource.data.priority in ['none', 'important', 'urgent']
+          && request.resource.data.ackBy == {}
+          && validOrganize(request.resource.data);
+
+        // 作者：可以改內容、刪除
+        allow update: if signedIn() && resource.data.authorId == request.auth.uid
+          && validOrganize(request.resource.data);
+        allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+        // 其他成員：可以移動 / 調整大小 / 調整圖層（像 Figma 共同編輯），也可以改狀態、標籤
+        allow update: if signedIn() && isMember(gid)
+          && onlyChanges(['x', 'y', 'w', 'h', 'z', 'status', 'tags'])
+          && validOrganize(request.resource.data);
+
+        // 其他成員：只能在 ackBy 裡加上「自己已確認」
+        allow update: if signedIn() && isMember(gid) && onlyChanges(['ackBy'])
+          && request.resource.data.ackBy.diff(resource.data.ackBy).affectedKeys().hasOnly([request.auth.uid]);
+      }
+    }
+  }
+}

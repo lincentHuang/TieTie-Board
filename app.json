@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "bulletin-board",
-    "slug": "bulletin-board",
+    "name": "貼貼公布欄",
+    "slug": "tietie-board",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
-    "scheme": "bulletinboard",
+    "scheme": "tietieboard",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.huanglingcheng.tietieboard",
+      "supportsTablet": true
     },
     "android": {
+      "package": "com.huanglingcheng.tietieboard",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -20,7 +23,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -32,7 +35,58 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.huanglingcheng.tietieboard",
+          "widgets": [
+            {
+              "name": "BoardWidget",
+              "displayName": "貼貼公布欄",
+              "description": "大字顯示最重要的公告與即將到來的活動",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge",
+                  "systemExtraLarge",
+                  "accessoryRectangular",
+                  "accessoryInline",
+                  "accessoryCircular"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "BoardWidget",
+              "label": "貼貼公布欄",
+              "description": "大字顯示最重要的公告與即將到來的活動",
+              "minWidth": "250dp",
+              "minHeight": "180dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "讓你可以把照片貼到公布欄上"
+        }
+      ],
+      "expo-notifications",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
