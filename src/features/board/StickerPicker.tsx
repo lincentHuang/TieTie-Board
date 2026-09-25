@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Sheet } from '../Sheet';
-import { Label } from '../ui';
+import { Sheet } from '@/components/Sheet';
+import { Label } from '@/components/ui';
 
 const GROUPS: { name: string; stickers: string[] }[] = [
   { name: '提醒', stickers: ['📌', '⚠️', '❗', '⏰', '📅', '✅', '❌', '🔔', '💯', '🆗'] },

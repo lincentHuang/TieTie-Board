@@ -2,10 +2,9 @@ import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 
+import { C, F } from '@/components/ui';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { PRIORITY_META, STATUS_META, isAnnouncement, tagColor, type BoardItem } from '@/lib/types';
-
-import { C, F } from '../ui';
 
 const TAPES = ['#FF9BB8', '#8FD9C4', '#FFD66B', '#A9C8FF', '#C9B4FF'];
 

@@ -2,9 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createElement } from 'react';
 import { requestWidgetUpdate } from 'react-native-android-widget';
 
-import { BoardAndroidWidget } from '@/widgets/android/BoardAndroidWidget';
-import { WIDGET_SOURCE_KEY } from '@/widgets/android/task-handler';
-
+import { BoardAndroidWidget } from './android/BoardAndroidWidget';
+import { WIDGET_SOURCE_KEY } from './android/task-handler';
 import { viewAt, type WidgetSource } from './widget-data';
 
 /** 存下原始資料（背景更新時用），並立刻重畫所有已放在桌面的小工具 */

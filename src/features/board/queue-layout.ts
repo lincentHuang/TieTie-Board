@@ -1,6 +1,5 @@
-import type { BoardItem } from '@/lib/types';
+import type { BoardItem, Geometry } from '@/lib/types';
 
-import type { Geometry } from './CanvasItem';
 import type { QueueSection } from './queue-filter';
 
 /** 同一排左右的間隔 */

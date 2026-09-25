@@ -72,14 +72,18 @@ npx expo run:android   # 需要 Android Studio
 ## 檔案結構
 
 ```
-src/app/                 畫面路由（Expo Router）
-src/components/board/    白板：Canvas（平移縮放）、CanvasItem（拖曳縮放）、編輯視窗…
-src/lib/                 Firebase、資料存取、日期、小工具資料、提醒通知
-src/pet/                 公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級
-src/widgets/BoardWidget.tsx       iOS 小工具（expo-widgets，JSX → SwiftUI）
-src/widgets/android/              Android 小工具（react-native-android-widget）
-firestore.rules          資料庫權限規則
+src/app/                  畫面路由（Expo Router），只負責決定顯示哪個畫面
+src/features/board/       白板：Canvas（平移縮放）、CanvasItem（拖曳縮放）、編輯視窗、排隊模式…
+src/features/setup/       第一次使用：取暱稱、建立 / 加入群組
+src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步
+src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
+src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
+src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知
+firestore.rules           資料庫權限規則
 ```
+
+依賴方向只能 `app → features → components → lib`，由 `eslint.config.js` 檢查（`npm run lint`）。
+完整的架構規範在 `.claude/skills/expo-app-architect/SKILL.md`。
 
 ## 之後可以加
 

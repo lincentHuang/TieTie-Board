@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { Sheet } from '@/components/Sheet';
+import { Button, C, F, Ionicons, Label, Segmented } from '@/components/ui';
 import {
   MAX_TAGS,
   normalizeTag,
@@ -12,9 +14,6 @@ import {
   type BoardItem,
   type ItemStatus,
 } from '@/lib/types';
-
-import { Sheet } from '../Sheet';
-import { Button, C, F, Ionicons, Label, Segmented } from '../ui';
 
 export function StatusPicker({ value, onChange }: { value: ItemStatus; onChange: (status: ItemStatus) => void }) {
   return (

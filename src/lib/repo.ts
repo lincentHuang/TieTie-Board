@@ -15,8 +15,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from './firebase';
-
-import { STATUSES, type BoardItem, type ItemStatus, type Member } from './types';
+import { ITEM_TYPES, PRIORITIES, STATUSES, type BoardItem, type Member } from './types';
 
 /**
  * Firestore 結構：
@@ -62,39 +61,43 @@ export async function joinGroup(gid: string, uid: string, nickname: string) {
 
 export const leaveGroup = (gid: string, uid: string) => deleteDoc(doc(membersRef(gid), uid));
 
+/* 讀回來的資料可能是舊版本或別台裝置寫的，每個欄位都先檢查型別，不對就用預設值 */
+const millis = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : null);
+const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback);
+const optStr = (v: unknown) => (typeof v === 'string' ? v : undefined);
+const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T => list.find((x) => x === v) ?? fallback;
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
 export const watchGroupName = (gid: string, cb: (name: string) => void) =>
-  onSnapshot(groupRef(gid), (s) => cb((s.data()?.name as string) ?? '公布欄'));
+  onSnapshot(groupRef(gid), (s) => cb(str(s.data()?.name, '公布欄')));
 
 export const watchMembers = (gid: string, cb: (members: Member[]) => void) =>
-  onSnapshot(membersRef(gid), (s) =>
-    cb(s.docs.map((d) => ({ uid: d.id, name: (d.data().name as string) ?? '（未命名）' }))),
-  );
+  onSnapshot(membersRef(gid), (s) => cb(s.docs.map((d) => ({ uid: d.id, name: str(d.data().name, '（未命名）') }))));
 
-const millis = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : null);
-
-function toItem(id: string, d: DocumentData): BoardItem {
+function toItem(id: string, d: Record<string, unknown>): BoardItem {
   return {
     id,
-    type: d.type ?? 'note',
-    x: d.x ?? 0,
-    y: d.y ?? 0,
-    w: d.w ?? 200,
-    h: d.h ?? 200,
-    z: d.z ?? 0,
-    text: d.text ?? '',
-    color: d.color ?? '#FFF3A3',
-    fontSize: d.fontSize ?? 20,
-    imageData: d.imageData,
-    sticker: d.sticker,
-    priority: d.priority ?? 'none',
+    type: oneOf(ITEM_TYPES, d.type, 'note'),
+    x: num(d.x, 0),
+    y: num(d.y, 0),
+    w: num(d.w, 200),
+    h: num(d.h, 200),
+    z: num(d.z, 0),
+    text: str(d.text, ''),
+    color: str(d.color, '#FFF3A3'),
+    fontSize: num(d.fontSize, 20),
+    imageData: optStr(d.imageData),
+    sticker: optStr(d.sticker),
+    priority: oneOf(PRIORITIES, d.priority, 'none'),
     dueAt: millis(d.dueAt),
-    status: STATUSES.includes(d.status) ? (d.status as ItemStatus) : 'none',
-    tags: Array.isArray(d.tags) ? d.tags.filter((t: unknown): t is string => typeof t === 'string') : [],
-    authorId: d.authorId ?? '',
-    authorName: d.authorName ?? '',
+    status: oneOf(STATUSES, d.status, 'none'),
+    tags: Array.isArray(d.tags) ? d.tags.filter((t): t is string => typeof t === 'string') : [],
+    authorId: str(d.authorId, ''),
+    authorName: str(d.authorName, ''),
     // 剛新增、伺服器時間還沒回來時先用本機時間
     createdAt: millis(d.createdAt) ?? Date.now(),
-    ackBy: d.ackBy ?? {},
+    ackBy: isRecord(d.ackBy) ? d.ackBy : {},
   };
 }
 

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp, FadeOut } from 'react-native-reanimated';
 
-import { C, F, Ionicons, type IconName } from '../ui';
+import { C, F, Ionicons, type IconName } from '@/components/ui';
+
 import { GROUP_OPTIONS, type Chip, type Filter, type QueueGroup } from './queue-filter';
 
 const GROUP_ICONS: Record<QueueGroup, IconName> = {

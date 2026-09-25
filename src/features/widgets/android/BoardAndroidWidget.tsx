@@ -1,6 +1,6 @@
 import { FlexWidget, TextWidget } from 'react-native-android-widget';
 
-import { FOCUS_COLORS, type WidgetView } from '@/lib/widget-data';
+import { FOCUS_COLORS, type WidgetView } from '../widget-data';
 
 type Hex = `#${string}`;
 const WHITE: Hex = '#FFFFFF';

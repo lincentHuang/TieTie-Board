@@ -10,12 +10,12 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 
-import type { WidgetView } from '@/lib/widget-data';
+import type { WidgetView } from './widget-data';
 
 /**
  * iOS 桌面 / 鎖定畫面小工具。
  * 注意：'widget' 函式在獨立環境執行，不能使用外部變數、hooks 或 import 的函式，
- * 所有要顯示的文字都由 App 事先算好（見 src/lib/widget-data.ts）。
+ * 所有要顯示的文字都由 App 事先算好（見 ./widget-data.ts）。
  */
 const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
   'widget';

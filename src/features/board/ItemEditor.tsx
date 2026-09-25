@@ -2,11 +2,12 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
+import { showError } from '@/components/dialogs';
+import { Sheet } from '@/components/Sheet';
+import { Button, C, F, Label, Segmented } from '@/components/ui';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
-import { Sheet } from '../Sheet';
-import { Button, C, F, Label, Segmented } from '../ui';
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
 
@@ -57,6 +58,9 @@ export function ItemEditor({
     try {
       await onSave({ ...draft, text: draft.text.trim() });
       onClose();
+    } catch (e) {
+      // 失敗時留在編輯畫面，剛打的內容不會不見
+      showError('儲存失敗', e);
     } finally {
       setBusy(false);
     }

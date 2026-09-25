@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 
-import { C } from '../ui';
+import { C } from '@/components/ui';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const toLocalInput = (t: number) => {

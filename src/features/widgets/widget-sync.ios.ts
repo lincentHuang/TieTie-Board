@@ -1,9 +1,8 @@
-import BoardWidget from '@/widgets/BoardWidget';
+import { nextMidnights } from '@/lib/dates';
 
-import { nextMidnights } from './dates';
-import { viewAt, type WidgetSource } from './widget-data';
+import BoardWidget from './BoardWidget';
+import { KEEP_AFTER_START, viewAt, type WidgetSource } from './widget-data';
 
-const KEEP_AFTER_START = 3_600_000;
 const MAX_ENTRIES = 30;
 
 /**

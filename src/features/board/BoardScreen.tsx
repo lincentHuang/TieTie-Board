@@ -1,8 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { askConfirm, showError } from '@/components/dialogs';
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { C, F, Ionicons, Squishy, type IconName } from '@/components/ui';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { pickImage } from '@/lib/images';
 import { acknowledge, addItem, deleteItem, editItem, leaveGroup, moveItem, organizeItem } from '@/lib/repo';
@@ -15,65 +17,24 @@ import {
   NOTE_COLORS,
   tagsInUse,
   type BoardItem,
+  type Geometry,
   type Member,
 } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
 
-import { MemberAvatar } from '../MemberAvatar';
-import { C, F, Ionicons, Squishy, type IconName } from '../ui';
 import { AnnouncementsSheet } from './AnnouncementsSheet';
 import { Canvas, type CanvasHandle } from './Canvas';
-import type { Geometry } from './CanvasItem';
 import { InviteSheet } from './InviteSheet';
 import { ItemEditor, type Draft } from './ItemEditor';
 import { OrganizeSheet } from './Organize';
-import { GROUP_OPTIONS, type QueueGroup } from './queue-filter';
 import { StickerPicker } from './StickerPicker';
 import { useBoard } from './useBoard';
+import { useViewPrefs } from './useViewPrefs';
 
 type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number } };
 type Panel = 'none' | 'stickers' | 'announcements' | 'invite';
 
 const TOOLBAR_HEIGHT = 76;
-
-interface ViewPrefs {
-  queued: boolean;
-  group: QueueGroup;
-}
-
-/** 自由擺放 / 排隊、怎麼分隊，都是每個人自己的看法，記在這台裝置上就好 */
-function useViewPrefs() {
-  const [prefs, setPrefs] = useState<ViewPrefs | null>(null);
-  useEffect(() => {
-    AsyncStorage.multiGet(['boardView', 'queueGroup'])
-      .then(([[, view], [, group]]) =>
-        setPrefs({
-          queued: view === 'queue',
-          group: GROUP_OPTIONS.find((o) => o.value === group)?.value ?? 'none',
-        }),
-      )
-      .catch(() => setPrefs({ queued: false, group: 'none' }));
-  }, []);
-  const setQueued = (queued: boolean) => {
-    setPrefs((p) => p && { ...p, queued });
-    AsyncStorage.setItem('boardView', queued ? 'queue' : 'free').catch(() => {});
-  };
-  const setGroup = (group: QueueGroup) => {
-    setPrefs((p) => p && { ...p, group });
-    AsyncStorage.setItem('queueGroup', group).catch(() => {});
-  };
-  return { prefs, setQueued, setGroup };
-}
-
-const confirm = (title: string, message: string) =>
-  Platform.OS === 'web'
-    ? Promise.resolve(window.confirm(`${title}\n${message}`))
-    : new Promise<boolean>((resolve) =>
-        Alert.alert(title, message, [
-          { text: '取消', style: 'cancel', onPress: () => resolve(false) },
-          { text: '確定', style: 'destructive', onPress: () => resolve(true) },
-        ]),
-      );
 
 export function BoardScreen() {
   const session = useSession();
@@ -111,7 +72,7 @@ export function BoardScreen() {
   const readCount = (item: BoardItem) => members.filter((m) => isAckedBy(item, m.uid)).length;
   const unreadOf = (memberUid: string) => items.filter((i) => isAnnouncement(i) && !isAckedBy(i, memberUid)).length;
 
-  const ack = (item: BoardItem) => acknowledge(gid, item.id, uid).catch((e) => console.warn(e));
+  const ack = (item: BoardItem) => acknowledge(gid, item.id, uid).catch((e) => showError('確認失敗', e));
 
   /** 新項目放在目前畫面正中間，疊在最上層 */
   const placeNew = (w: number, h: number) => {
@@ -172,27 +133,31 @@ export function BoardScreen() {
         },
       });
     } catch (e) {
-      Alert.alert('無法讀取圖片', String(e));
+      showError('無法讀取圖片', e);
     }
   };
 
   const addSticker = async (sticker: string) => {
     setPanel('none');
-    const ref = await addItem(gid, {
-      type: 'sticker',
-      sticker,
-      text: '',
-      color: 'transparent',
-      fontSize: 20,
-      priority: 'none',
-      dueAt: null,
-      status: 'none',
-      tags: [],
-      ...placeNew(120, 120),
-      authorId: uid,
-      authorName: session.nickname ?? '',
-    });
-    showNew(ref.id);
+    try {
+      const ref = await addItem(gid, {
+        type: 'sticker',
+        sticker,
+        text: '',
+        color: 'transparent',
+        fontSize: 20,
+        priority: 'none',
+        dueAt: null,
+        status: 'none',
+        tags: [],
+        ...placeNew(120, 120),
+        authorId: uid,
+        authorName: session.nickname ?? '',
+      });
+      showNew(ref.id);
+    } catch (e) {
+      showError('貼圖貼不上去', e);
+    }
   };
 
   const open = (id: string) => {
@@ -208,23 +173,32 @@ export function BoardScreen() {
   };
 
   const commit = (id: string, geo: Geometry) => {
-    moveItem(gid, id, geo).catch((e) => console.warn(e));
+    moveItem(gid, id, geo).catch((e) => showError('移動失敗', e));
   };
 
-  const bringToFront = (item: BoardItem) => moveItem(gid, item.id, { z: maxZ + 1 });
+  const bringToFront = (item: BoardItem) =>
+    moveItem(gid, item.id, { z: maxZ + 1 }).catch((e) => showError('調整圖層失敗', e));
 
   const remove = async (item: BoardItem) => {
-    if (!(await confirm('刪除這個項目？', itemTitle(item)))) return;
-    setSelectedId(null);
-    setEditing(null);
-    await deleteItem(gid, item.id);
+    if (!(await askConfirm('刪除這個項目？', itemTitle(item)))) return;
+    try {
+      await deleteItem(gid, item.id);
+      setSelectedId(null);
+      setEditing(null);
+    } catch (e) {
+      showError('刪除失敗', e);
+    }
   };
 
   const leave = async () => {
-    if (!(await confirm(`離開「${groupName}」？`, '之後可以用邀請碼再加入。'))) return;
-    setPanel('none');
-    await leaveGroup(gid, uid);
-    await session.leaveGroup();
+    if (!(await askConfirm(`離開「${groupName}」？`, '之後可以用邀請碼再加入。'))) return;
+    try {
+      await leaveGroup(gid, uid);
+      setPanel('none');
+      await session.leaveGroup();
+    } catch (e) {
+      showError('離開群組失敗', e);
+    }
   };
 
   const locate = (item: BoardItem) => {
@@ -360,7 +334,7 @@ export function BoardScreen() {
         <OrganizeSheet
           item={organizing}
           suggestions={allTags}
-          onChange={(patch) => organizeItem(gid, organizing.id, patch).catch((e) => console.warn(e))}
+          onChange={(patch) => organizeItem(gid, organizing.id, patch).catch((e) => showError('整理失敗', e))}
           onClose={() => setOrganizingId(null)}
         />
       ) : null}

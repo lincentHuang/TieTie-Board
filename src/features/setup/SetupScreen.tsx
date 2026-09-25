@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button, C, F, Label, Segmented } from '@/components/ui';
+import { errorMessage } from '@/lib/errors';
 import { createGroup, joinGroup, normalizeCode } from '@/lib/repo';
 import { useSession } from '@/lib/session';
-
-import { Button, C, F, Label, Segmented } from './ui';
 
 /** 第一次使用：取暱稱，然後建立或加入群組 */
 export function SetupScreen() {
@@ -35,7 +35,7 @@ export function SetupScreen() {
         await session.enterGroup(gid, nick);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       setBusy(false);
     }
   };

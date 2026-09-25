@@ -12,20 +12,46 @@ description: 公布欄 App（Expo Router + React Native + Firebase）的前端�
 
 ## 1. 目錄與分層邊界
 
+```
+src/
+  app/            路由層：只做編排（每個檔案都是一個路由）
+  features/       功能模組：每個功能一個資料夾
+    board/        白板（主畫面）：畫布、項目、編輯、排隊、公告面板…
+    setup/        第一次使用：取暱稱、建立 / 加入群組
+    widgets/      桌面小工具：iOS（BoardWidget）、Android（android/）、資料轉換與同步
+    pet/          公告小幫手（寵物）——元件已完成，尚未接到畫面上
+  components/     共用 UI：ui.tsx（C、F、Button…）、Sheet、MemberAvatar、dialogs
+  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知
+```
+
+**依賴方向只能往下**：`app → features → components → lib`。反過來就是違規：
+
+| 資料夾 | 可以 import | 不可以 import |
+|---|---|---|
+| `src/app/` | features、components、lib | — |
+| `src/features/board/` | 其他 features 對外的函式與元件、components、lib | `firebase/*` |
+| `src/features/`（board 以外） | components、lib | `@/features/board/*`、`firebase/*` |
+| `src/components/` | lib | `@/features/*`、`firebase/*` |
+| `src/lib/` | lib 自己 | `@/features/*`、`@/components/*`；`firebase/*` 只限 `repo.ts`、`firebase*.ts` |
+
+這些規則寫在 `eslint.config.js` 的 `no-restricted-imports`，`npx expo lint` 會直接擋下來；不要為了過 lint 去關掉規則。
+
 - **路由層（`src/app/`）**：只做編排。負責讀路由參數、依登入 / 群組狀態決定顯示哪個畫面、組合功能元件、載入中與錯誤畫面。
   - 不在這裡直接呼叫 Firestore、不放大段 UI、不放商業邏輯。範例：`src/app/index.tsx` 只依 `useSession()` 切換 `BoardScreen` / `SetupScreen`。
-  - 這個資料夾裡每個檔案都是一個路由，元件、hooks、工具函式一律放在 `src/app/` 以外。
+  - 元件、hooks、工具函式一律放在 `src/app/` 以外。
   - 路由檔要做平台專屬版本（`x.web.tsx`、`x.ios.tsx`）時，一定要同時有沒有副檔名的 `x.tsx`（深層連結需要）。
-- **功能模組**：每個功能自成一個資料夾，裡面放該功能的畫面元件、hooks、純函式。
-  - 現有：`src/components/board/`（白板）、`src/pet/`（公告小幫手）、`src/widgets/`（桌面小工具）。
-  - 新功能：開 `src/components/<功能>/`。只有自成一體、跟白板無關的大功能才比照 `src/pet/` 放在 `src/<功能>/`。
-  - 純邏輯（排序、篩選、版面計算、日期）抽成 `.ts` 檔，例如 `queue-filter.ts`、`queue-layout.ts`，不要寫在元件裡。
-- **共用基礎（`src/lib/`）**：跨功能的東西才放這裡。
-  - `repo.ts`：Firestore 資料存取層（唯一可以 import `firebase/firestore` 讀寫資料的地方）。
-  - `types.ts`：領域型別與跟型別綁在一起的純函式（`isAckedBy`、`byUrgency`…）。
-  - `firebase.ts`、`session.tsx`：連線初始化與登入狀態。
-- **共用 UI（`src/components/ui.tsx`、`Sheet.tsx`、`MemberAvatar.tsx`）**：只負責外觀與互動，不碰資料層。顏色、字型一律用 `ui.tsx` 的 `C`、`F`，不要在元件裡寫死新的色碼。
-- 不要為了符合這份規範去搬動既有檔案；只有在使用者要求重構時才調整結構。
+- **功能模組（`src/features/<功能>/`）**：該功能的畫面元件、hooks（`useBoard.ts`、`useViewPrefs.ts`）、純函式都放在自己的資料夾。
+  - 新功能一律開新的 `src/features/<功能>/`，不要塞進 `src/components/`。
+  - 純邏輯（排序、篩選、版面計算）抽成 `.ts` 檔，例如 `queue-filter.ts`、`queue-layout.ts`，不要寫在元件裡；純邏輯檔不能 import 元件檔（共用型別放 `src/lib/types.ts`，例如 `Geometry`）。
+  - 同一個功能內用相對路徑（`./Canvas`）；跨資料夾一律用別名（`@/components/ui`、`@/lib/repo`）。
+- **共用 UI（`src/components/`）**：只放兩個以上功能會用到、跟資料無關的元件與 UI 工具。
+  - 顏色、字型一律用 `ui.tsx` 的 `C`、`F`，不要在元件裡寫死新的色碼。
+  - 確認對話框、錯誤提示用 `dialogs.ts` 的 `askConfirm`、`showError`（網頁版的 `Alert.alert` 什麼都不會顯示，不要直接用）。
+- **共用基礎（`src/lib/`）**：跨功能、跟畫面無關的東西。
+  - `repo.ts`：Firestore 資料存取層（唯一可以讀寫 Firestore 的地方）。
+  - `types.ts`：領域型別、合法值清單（`ITEM_TYPES`、`PRIORITIES`、`STATUSES`）與跟型別綁在一起的純函式（`isAckedBy`、`byUrgency`…）。
+  - `firebase.ts`、`session.tsx`：連線初始化與登入狀態；`errors.ts`：把錯誤轉成中文訊息。
+- **import 分組**：套件 → 空一行 → `@/...` 別名（依路徑排序）→ 空一行 → 相對路徑。
 
 ## 2. 元件拆分與「邊界」規則
 
@@ -34,9 +60,9 @@ description: 公布欄 App（Expo Router + React Native + Firebase）的前端�
 - **狀態往葉子推**：互動狀態放在真正需要它的最小元件裡，不要讓 `BoardScreen` 這種大容器為了一個輸入框整個重新渲染。拖曳、縮放等每一格都在變的值用 Reanimated 的 shared value（`useSharedValue`）在 UI 執行緒處理，手勢結束時才用 `scheduleOnRN` 回到 JS、再寫回 Firestore（參考 `CanvasItem.tsx`）。
 - **用 children 組合**：外殼元件（`Sheet`、未來的折疊面板、對話框）只管開關狀態，內容用 `children` / `footer` 傳進來，外殼不要 import 內容元件。
 - **平台邊界（取代 `server-only`）**：只存在原生端的模組（`expo-widgets`、`react-native-android-widget`、`expo-notifications` 等）只能在平台專屬檔案裡 import：
-  - 寫 `x.native.ts` / `x.ios.ts` / `x.android.ts`，並保留沒有副檔名的 `x.ts` 當網頁版替身（空實作），讓型別檢查與網頁版都能解析。範例：`widget-sync.ts` / `widget-sync.ios.ts` / `widget-sync.android.ts`、`reminders.ts` / `reminders.native.ts`。
+  - 寫 `x.native.ts` / `x.ios.ts` / `x.android.ts`，並保留沒有副檔名的 `x.ts` 當網頁版替身（空實作），讓型別檢查與網頁版都能解析。範例：`features/widgets/widget-sync.ts` / `.ios.ts` / `.android.ts`、`lib/reminders.ts` / `.native.ts`、`components/dialogs.ts` / `.native.ts`。
   - 各平台版本的匯出名稱與函式簽名必須完全相同。
-  - 共用檔案永遠 import 沒有副檔名的路徑（`@/lib/widget-sync`），交給 Metro 挑平台版本。
+  - 共用檔案永遠 import 沒有副檔名的路徑（`@/features/widgets/widget-sync`），交給 Metro 挑平台版本。
 - **機密邊界**：`EXPO_PUBLIC_` 開頭的環境變數會在建置時直接寫進 App，任何人都看得到。Firebase 網頁設定值可以放，其他金鑰、密碼、管理者憑證**絕對不能**放進 App。
 
 ## 3. 資料存取層（repo）與寫入
@@ -44,12 +70,14 @@ description: 公布欄 App（Expo Router + React Native + Firebase）的前端�
 - **所有讀寫都經過 `src/lib/repo.ts`**。元件與 hooks 不直接 import `firebase/firestore`、不自己組 `doc()` / `collection()` 路徑。
 - **讀取（即時訂閱）**：
   - 寫成 `watchX(gid, cb)`，回傳取消訂閱函式；在 hook 的 `useEffect` 裡訂閱、cleanup 時取消（參考 `useBoard.ts`）。
-  - 一定要經過 `toX(id, data)` 轉換：逐欄位對應、補預設值、檢查型別（例如 `toItem` 會過濾 `tags` 只留字串、`status` 只接受合法值）。不要把原始 `DocumentData` 丟給 UI。
+  - 一定要經過 `toX(id, data)` 轉換：參數型別用 `Record<string, unknown>`（不要用 `DocumentData`，它是 `any`），每個欄位都用 `num` / `str` / `oneOf` 等小工具檢查型別、補預設值。不要把原始資料丟給 UI。
   - `Timestamp` 在 repo 裡轉成毫秒（`number | null`），UI 不處理 Firestore 型別。
 - **寫入（取代 Server Actions）**：
   - 依「誰可以改什麼」拆成不同函式，用 `Pick<>` 限制可以改的欄位，例如 `moveItem`（位置，所有成員）、`organizeItem`（狀態 / 標籤，所有成員）、`editItem`（內容，只有作者）。
   - 寫入前經過 `toFirestore` 之類的轉換：去掉 `undefined`（Firestore 不接受）、去掉唯讀欄位（`id`、`createdAt`、`ackBy`）、時間用 `serverTimestamp()`。
-  - 預期中的失敗（例如邀請碼不存在）回傳 `false` / `null` 讓畫面處理；非預期錯誤直接丟出，由畫面 `catch` 後用繁體中文訊息提示使用者（`Alert` 或畫面上的錯誤文字），背景同步類的錯誤用 `console.warn` 記錄即可。
+  - 預期中的失敗（例如邀請碼不存在）回傳 `false` / `null` 讓畫面處理；非預期錯誤直接丟出。
+  - 使用者按下去的動作（新增、刪除、確認、移動…）一定要 `catch`，用 `showError('刪除失敗', e)` 提示；畫面上的表單則用 `errorMessage(e)` 顯示在欄位下方。不要留下沒接住的 Promise。
+  - 失敗時保留使用者的輸入（例如編輯視窗不要關掉）。背景同步類的錯誤（小工具、提醒通知）用 `console.warn` 記錄即可。
 - **權限以 `firestore.rules` 為準（取代「寫入前驗證 session」）**：
   - 畫面上隱藏按鈕只是體驗，真正的防線是規則。新增任何寫入路徑或欄位，**同一個改動裡**就要更新 `firestore.rules`（誰能寫、能改哪些欄位、格式與長度限制）。
   - 用模擬器驗證：`npm run emulators` + `npm run dev:web`。

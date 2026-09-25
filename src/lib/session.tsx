@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { errorMessage } from './errors';
 import { ensureSignedIn, firebaseConfigured } from './firebase';
 
 interface SessionState {
@@ -36,7 +37,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setGroupId(gid);
         setStatus('ready');
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(errorMessage(e));
         setStatus('error');
       }
     })();

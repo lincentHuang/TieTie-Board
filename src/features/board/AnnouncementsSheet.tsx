@@ -1,12 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { Sheet } from '@/components/Sheet';
+import { Button, C, F, Ionicons, Label } from '@/components/ui';
 import { countdownLabel, timeAgo, whenLabel } from '@/lib/dates';
 import { PRIORITY_META, isAckedBy, isAnnouncement, itemTitle, type BoardItem, type Member } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
-
-import { MemberAvatar } from '../MemberAvatar';
-import { Sheet } from '../Sheet';
-import { Button, C, F, Ionicons, Label } from '../ui';
 
 /** 所有「要注意的事」：等我確認的公告、接下來的行程、我發的公告誰還沒看 */
 export function AnnouncementsSheet({

@@ -16,12 +16,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import type { BoardItem } from '@/lib/types';
+import { C } from '@/components/ui';
+import type { BoardItem, Geometry } from '@/lib/types';
 
-import { C } from '../ui';
 import { ItemBody } from './ItemBody';
-
-export type Geometry = Pick<BoardItem, 'x' | 'y' | 'w' | 'h'>;
 
 const MIN_SIZE = 48;
 const CORNERS = [

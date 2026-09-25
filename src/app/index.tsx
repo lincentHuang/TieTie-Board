@@ -2,8 +2,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { BoardScreen } from '@/components/board/BoardScreen';
-import { SetupScreen } from '@/components/SetupScreen';
+import { BoardScreen } from '@/features/board/BoardScreen';
+import { SetupScreen } from '@/features/setup/SetupScreen';
 import { C, F, Ionicons } from '@/components/ui';
 import { useSession } from '@/lib/session';
 

@@ -1,5 +1,5 @@
-import { countdownLabel, whenLabel } from './dates';
-import { byUrgency, isAckedBy, isAnnouncement, itemTitle, type BoardItem, type Priority } from './types';
+import { countdownLabel, whenLabel } from '@/lib/dates';
+import { byUrgency, isAckedBy, isAnnouncement, itemTitle, type BoardItem, type Priority } from '@/lib/types';
 
 /** App 存給桌面小工具的原始資料（不含相對時間文字，由小工具依當下時間計算） */
 export interface WidgetSource {
@@ -23,7 +23,32 @@ export interface WidgetView {
 }
 
 /** 活動開始後還會在小工具上留多久 */
-const KEEP_AFTER_START = 3_600_000;
+export const KEEP_AFTER_START = 3_600_000;
+
+const EMPTY_SOURCE: WidgetSource = { groupName: '公布欄', pending: [], events: [] };
+
+/** 從儲存空間讀回來的字串還原成 WidgetSource；壞掉或格式不對就當作沒有資料 */
+export function parseWidgetSource(raw: string | null): WidgetSource {
+  if (!raw) return EMPTY_SOURCE;
+  try {
+    const data: unknown = JSON.parse(raw);
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'groupName' in data &&
+      typeof data.groupName === 'string' &&
+      'pending' in data &&
+      Array.isArray(data.pending) &&
+      'events' in data &&
+      Array.isArray(data.events)
+    ) {
+      return { groupName: data.groupName, pending: data.pending, events: data.events };
+    }
+  } catch {
+    // 格式壞掉 → 用空資料，下次打開 App 會重新寫入
+  }
+  return EMPTY_SOURCE;
+}
 
 export function buildWidgetSource(items: BoardItem[], uid: string, groupName: string): WidgetSource {
   const pending = items

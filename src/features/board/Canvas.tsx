@@ -4,10 +4,10 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { byQueueOrder, type BoardItem } from '@/lib/types';
+import { C, F, Ionicons, type IconName } from '@/components/ui';
+import { byQueueOrder, type BoardItem, type Geometry } from '@/lib/types';
 
-import { C, F, Ionicons, type IconName } from '../ui';
-import { CanvasItem, type Geometry } from './CanvasItem';
+import { CanvasItem } from './CanvasItem';
 import { QueueBar } from './QueueBar';
 import { filterChips, groupQueue, matchesFilter, type Filter, type QueueGroup } from './queue-filter';
 import { queueLayout } from './queue-layout';

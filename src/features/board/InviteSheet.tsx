@@ -2,11 +2,10 @@ import * as Clipboard from 'expo-clipboard';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { MemberAvatar } from '@/components/MemberAvatar';
+import { Sheet } from '@/components/Sheet';
+import { Button, C, F, Label } from '@/components/ui';
 import type { Member } from '@/lib/types';
-
-import { MemberAvatar } from '../MemberAvatar';
-import { Sheet } from '../Sheet';
-import { Button, C, F, Label } from '../ui';
 
 /** 家人：誰還有公告沒看、邀請碼 */
 export function InviteSheet({

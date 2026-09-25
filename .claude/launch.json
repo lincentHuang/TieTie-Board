@@ -26,6 +26,23 @@
         "EXPO_PUBLIC_FIREBASE_EMULATOR_HOST": "127.0.0.1"
       },
       "port": 8082
+    },
+    {
+      "name": "web-8083",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "expo",
+        "start",
+        "--web",
+        "--port",
+        "8083"
+      ],
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "demo-bulletin",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "demo-key",
+        "EXPO_PUBLIC_FIREBASE_EMULATOR_HOST": "127.0.0.1"
+      },
+      "port": 8083
     }
   ]
 }

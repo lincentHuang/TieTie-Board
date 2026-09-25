@@ -1,9 +1,8 @@
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { View } from 'react-native';
 
+import { Button } from '@/components/ui';
 import { timeOfDay } from '@/lib/dates';
-
-import { Button } from '../ui';
 
 /** Android 沒有日期+時間合一的選擇器，分成兩個按鈕 */
 export function DateTimeField({ value, onChange }: { value: number; onChange: (t: number) => void }) {

@@ -1,7 +1,9 @@
 export type ItemType = 'note' | 'image' | 'sticker';
+export const ITEM_TYPES: ItemType[] = ['note', 'image', 'sticker'];
 
 /** none = 一般便利貼；important / urgent = 公告，需要大家按「我知道了」 */
 export type Priority = 'none' | 'important' | 'urgent';
+export const PRIORITIES: Priority[] = ['none', 'important', 'urgent'];
 
 /** 像待辦清單的進度，大家都可以改；none = 不需要追蹤 */
 export type ItemStatus = 'none' | 'todo' | 'doing' | 'done';
@@ -37,6 +39,9 @@ export interface BoardItem {
   /** uid → 確認時間 */
   ackBy: Record<string, unknown>;
 }
+
+/** 白板上的位置與大小 */
+export type Geometry = Pick<BoardItem, 'x' | 'y' | 'w' | 'h'>;
 
 export interface Member {
   uid: string;

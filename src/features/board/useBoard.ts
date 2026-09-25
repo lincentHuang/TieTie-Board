@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 
+import { buildWidgetSource } from '@/features/widgets/widget-data';
+import { syncWidget } from '@/features/widgets/widget-sync';
 import { syncReminders } from '@/lib/reminders';
 import { watchGroupName, watchItems, watchMembers } from '@/lib/repo';
 import type { BoardItem, Member } from '@/lib/types';
-import { buildWidgetSource } from '@/lib/widget-data';
-import { syncWidget } from '@/lib/widget-sync';
 
 /** 即時同步白板內容，並順便更新桌面小工具與提醒通知 */
 export function useBoard(groupId: string, uid: string) {
