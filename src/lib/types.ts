@@ -23,6 +23,10 @@ export interface BoardItem {
   fontSize: number;
   /** 圖片：壓縮後的 data URL */
   imageData?: string;
+  /** 便利貼 / 公告附的照片（壓縮後的 data URL），最多 MAX_PHOTOS 張；第一張是封面 */
+  photos: string[];
+  /** 白板上輪流播放所有照片；關掉時只放封面 */
+  carousel: boolean;
   /** 貼圖：emoji */
   sticker?: string;
 
@@ -63,6 +67,8 @@ export const STATUS_META: Record<ItemStatus, { label: string; icon: string; colo
 export const STATUSES: ItemStatus[] = ['none', 'todo', 'doing', 'done'];
 
 export const MAX_TAGS = 5;
+/** 一張便利貼最多幾張照片（含封面）。Firestore 單一文件上限 1MB，照片都存在同一份文件裡 */
+export const MAX_PHOTOS = 5;
 /** 還沒有人用過標籤時，先給幾個家裡常用的 */
 export const STARTER_TAGS = ['家事', '採買', '學校', '繳費', '出遊'];
 
@@ -97,7 +103,18 @@ export const isAckedBy = (item: BoardItem, uid: string) =>
 export const itemTitle = (item: BoardItem) => {
   if (item.type === 'image') return item.text.split('\n')[0] || '圖片';
   if (item.type === 'sticker') return item.sticker ?? '貼圖';
-  return item.text.split('\n')[0] || '（沒有文字）';
+  return item.text.split('\n')[0] || (item.photos.length ? '照片' : '（沒有文字）');
+};
+
+/** 點開來可以放大看的照片：拍立得是那一張，便利貼是附的照片 */
+export const viewablePhotos = (item: BoardItem) =>
+  item.type === 'image' ? (item.imageData ? [item.imageData] : []) : item.photos;
+
+/** 照片一樣就好、順序不管（換封面只是換順序，不算改了公告內容） */
+export const samePhotoSet = (a: string[], b: string[]) => {
+  if (a.length !== b.length) return false;
+  const sorted = [...b].sort();
+  return [...a].sort().every((p, i) => p === sorted[i]);
 };
 
 /** 排隊模式的順序（跟誰在看無關，大家看到的隊伍都一樣）：完成的排到最後，緊急 > 重要 > 一般，貼圖排最後，快到的活動在前，其餘越新越前面 */

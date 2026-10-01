@@ -67,6 +67,7 @@ const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.i
 const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback);
 const optStr = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T => list.find((x) => x === v) ?? fallback;
+const strList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export const watchGroupName = (gid: string, cb: (name: string) => void) =>
@@ -89,10 +90,12 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
     fontSize: num(d.fontSize, 20),
     imageData: optStr(d.imageData),
     sticker: optStr(d.sticker),
+    photos: strList(d.photos),
+    carousel: d.carousel === true,
     priority: oneOf(PRIORITIES, d.priority, 'none'),
     dueAt: millis(d.dueAt),
     status: oneOf(STATUSES, d.status, 'none'),
-    tags: Array.isArray(d.tags) ? d.tags.filter((t): t is string => typeof t === 'string') : [],
+    tags: strList(d.tags),
     authorId: str(d.authorId, ''),
     authorName: str(d.authorName, ''),
     // 剛新增、伺服器時間還沒回來時先用本機時間

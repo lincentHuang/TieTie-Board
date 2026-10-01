@@ -19,6 +19,12 @@ service cloud.firestore {
         && (!('tags' in d) || (d.tags is list && d.tags.size() <= 5));
     }
 
+    // 便利貼附的照片、輪播開關可以沒有（舊資料），有的話照片最多 5 張（整份文件還有 Firestore 的 1MB 上限把關）
+    function validPhotos(d) {
+      return (!('photos' in d) || (d.photos is list && d.photos.size() <= 5))
+        && (!('carousel' in d) || d.carousel is bool);
+    }
+
     match /groups/{gid} {
       // 邀請碼就是鑰匙：知道碼才讀得到群組，不開放列出所有群組
       allow get: if signedIn();
@@ -41,11 +47,13 @@ service cloud.firestore {
           && request.resource.data.type in ['note', 'image', 'sticker']
           && request.resource.data.priority in ['none', 'important', 'urgent']
           && request.resource.data.ackBy == {}
-          && validOrganize(request.resource.data);
+          && validOrganize(request.resource.data)
+          && validPhotos(request.resource.data);
 
         // 作者：可以改內容、刪除
         allow update: if signedIn() && resource.data.authorId == request.auth.uid
-          && validOrganize(request.resource.data);
+          && validOrganize(request.resource.data)
+          && validPhotos(request.resource.data);
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
 
         // 其他成員：可以移動 / 調整大小 / 調整圖層（像 Figma 共同編輯），也可以改狀態、標籤

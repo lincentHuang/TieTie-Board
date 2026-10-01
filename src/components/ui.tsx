@@ -8,6 +8,7 @@ import {
   View,
   type PressableProps,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -154,8 +155,8 @@ export function Segmented<T extends string>({
   );
 }
 
-export function Label({ children }: { children: ReactNode }) {
-  return <Text style={s.label}>{children}</Text>;
+export function Label({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
+  return <Text style={[s.label, style]}>{children}</Text>;
 }
 
 export { Ionicons };

@@ -1,12 +1,15 @@
 import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, type SharedValue } from 'react-native-reanimated';
 
-import { C, F } from '@/components/ui';
+import { C, F, Ionicons } from '@/components/ui';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { PRIORITY_META, STATUS_META, isAnnouncement, tagColor, type BoardItem } from '@/lib/types';
 
 const TAPES = ['#FF9BB8', '#8FD9C4', '#FFD66B', '#A9C8FF', '#C9B4FF'];
+/** 輪播時每張照片停留多久 */
+const SLIDE_MS = 4000;
 
 /** 從 id 算出固定的小變化：每張紙歪的角度、紙膠帶顏色 */
 function quirks(id: string) {
@@ -111,7 +114,8 @@ export function ItemBody({
       <View style={[s.fill, { transform: [{ rotate: `${tilt}deg` }] }]}>
         <View style={[s.fill, s.polaroid]}>
           {header}
-          <Image source={{ uri: item.imageData }} style={[s.fill, s.photo]} contentFit="cover" />
+          {/* 照片不收手指：網頁上按著 <img> 拖會變成瀏覽器的「拖曳圖片」，卡片就拖不動 */}
+          <Image pointerEvents="none" source={{ uri: item.imageData }} style={[s.fill, s.photo]} contentFit="cover" />
           {item.text ? (
             <Text style={s.caption} numberOfLines={2}>
               {item.text}
@@ -131,9 +135,16 @@ export function ItemBody({
     <View style={[s.fill, { transform: [{ rotate: `${tilt}deg` }] }]}>
       <View style={[s.fill, s.note, { backgroundColor: item.color }, announce && { borderColor: meta.color }]}>
         {header}
-        <Text style={[s.noteText, { fontSize: item.fontSize, lineHeight: item.fontSize * 1.35 }, done && s.doneText]}>
-          {item.text}
-        </Text>
+        {/* 文字高度不能被卡片限制：iOS 放不下時會把最後一行從字中間切掉，而不是整個字換到下一行。
+            所以文字用絕對定位照自己的高度排版，多出來的由外框裁掉 */}
+        {item.text || !item.photos.length ? (
+          <View style={s.noteBody}>
+            <Text style={[s.noteText, { fontSize: item.fontSize, lineHeight: item.fontSize * 1.35 }, done && s.doneText]}>
+              {item.text}
+            </Text>
+          </View>
+        ) : null}
+        {item.photos.length ? <CardPhotos photos={item.photos} carousel={item.carousel} /> : null}
         {tags}
         {footer}
       </View>
@@ -143,6 +154,46 @@ export function ItemBody({
           <View style={s.tapeStripe} />
         </View>
       )}
+    </View>
+  );
+}
+
+/** 便利貼上的照片：平常只放封面（第一張）；開了輪播就從封面開始輪流換。
+    白板上的卡片要能拖曳，所以不做手指滑動（照片也不收手指，按著照片一樣拖得動），其他照片點兩下卡片再看 */
+function CardPhotos({ photos, carousel }: { photos: string[]; carousel: boolean }) {
+  const reduced = useReducedMotion();
+  const rotating = carousel && photos.length > 1;
+  const count = photos.length;
+  const [at, setAt] = useState(0);
+
+  useEffect(() => {
+    if (!rotating) return;
+    const timer = setInterval(() => setAt((n) => (n + 1) % count), SLIDE_MS);
+    return () => clearInterval(timer);
+  }, [rotating, count]);
+
+  const shown = rotating ? at % count : 0;
+  return (
+    <View pointerEvents="none" style={s.photos}>
+      <Image
+        source={{ uri: photos[shown] }}
+        style={s.coverPhoto}
+        contentFit="cover"
+        transition={reduced ? 0 : { duration: 500, effect: 'cross-dissolve' }}
+      />
+      {rotating ? (
+        <View style={s.dots}>
+          {photos.map((_, i) => (
+            <View key={i} style={[s.dot, i === shown && s.dotOn]} />
+          ))}
+        </View>
+      ) : count > 1 ? (
+        // 只放封面時，角落標出總共幾張，大家才知道點進去還有
+        <View style={s.more}>
+          <Ionicons name="images" size={11} color="#FFF" />
+          <Text style={s.moreText}>{count}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -171,7 +222,27 @@ const s = StyleSheet.create({
   sticker: { textAlign: 'center', textShadowColor: '#6B4FA833', textShadowRadius: 8, textShadowOffset: { width: 0, height: 4 } },
   // 白邊貼紙
   note: { borderRadius: 18, borderWidth: 5, borderColor: '#FFFFFF', overflow: 'hidden', ...shadow },
-  noteText: { flex: 1, padding: 12, color: C.ink, fontFamily: F.display },
+  noteBody: { flex: 1, overflow: 'hidden' },
+  noteText: { position: 'absolute', top: 0, left: 0, right: 0, padding: 12, color: C.ink, fontFamily: F.display },
+  // 有文字時照片佔多一點點，照片才看得清楚
+  photos: { flex: 1.3, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 4 },
+  coverPhoto: { flex: 1, borderRadius: 10, backgroundColor: '#0000000D' },
+  dots: { position: 'absolute', bottom: 14, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF8C' },
+  dotOn: { backgroundColor: '#FFF', width: 14 },
+  more: {
+    position: 'absolute',
+    top: 10,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 9,
+    backgroundColor: '#00000066',
+  },
+  moreText: { fontSize: 11, color: '#FFF', fontFamily: F.display },
   tape: {
     position: 'absolute',
     top: -11,

@@ -15,7 +15,9 @@ import {
   isAnnouncement,
   itemTitle,
   NOTE_COLORS,
+  samePhotoSet,
   tagsInUse,
+  viewablePhotos,
   type BoardItem,
   type Geometry,
   type Member,
@@ -27,6 +29,7 @@ import { Canvas, type CanvasHandle } from './Canvas';
 import { InviteSheet } from './InviteSheet';
 import { ItemEditor, type Draft } from './ItemEditor';
 import { OrganizeSheet } from './Organize';
+import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
 import { useBoard } from './useBoard';
 import { useViewPrefs } from './useViewPrefs';
@@ -35,6 +38,8 @@ type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number 
 type Panel = 'none' | 'stickers' | 'announcements' | 'invite';
 
 const TOOLBAR_HEIGHT = 76;
+/** 便利貼有照片時多長高一點，文字才不會被照片擠扁 */
+const PHOTO_ROOM = 130;
 
 export function BoardScreen() {
   const session = useSession();
@@ -49,6 +54,7 @@ export function BoardScreen() {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [panel, setPanel] = useState<Panel>('none');
   const [organizingId, setOrganizingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const { prefs, setQueued, setGroup } = useViewPrefs();
 
   if (!items || !prefs) {
@@ -63,6 +69,8 @@ export function BoardScreen() {
   const { queued } = prefs;
   const selected = items.find((i) => i.id === selectedId) ?? null;
   const organizing = items.find((i) => i.id === organizingId) ?? null;
+  const viewing = items.find((i) => i.id === viewingId);
+  const viewingPhotos = viewing ? viewablePhotos(viewing) : [];
   const allTags = tagsInUse(items).map((t) => t.tag);
   const maxZ = items.reduce((m, i) => Math.max(m, i.z), 0);
   const pending = items.filter((i) => isAnnouncement(i) && !isAckedBy(i, uid)).sort(byUrgency(uid));
@@ -106,6 +114,8 @@ export function BoardScreen() {
         fontSize: announcement ? 28 : 20,
         priority: announcement ? 'important' : 'none',
         dueAt: null,
+        photos: [],
+        carousel: false,
         status: 'none',
         tags: [],
       },
@@ -128,6 +138,8 @@ export function BoardScreen() {
           priority: 'none',
           dueAt: null,
           imageData: img.dataUrl,
+          photos: [],
+          carousel: false,
           status: 'none',
           tags: [],
         },
@@ -148,6 +160,8 @@ export function BoardScreen() {
         fontSize: 20,
         priority: 'none',
         dueAt: null,
+        photos: [],
+        carousel: false,
         status: 'none',
         tags: [],
         ...placeNew(120, 120),
@@ -164,12 +178,16 @@ export function BoardScreen() {
     const item = items.find((i) => i.id === id);
     if (!item || item.type === 'sticker') return;
     if (item.authorId !== uid) {
-      // 別人的東西不能改內容；如果是公告就打開確認面板
-      if (isAnnouncement(item)) setPanel('announcements');
+      // 別人的東西不能改內容：有照片就全螢幕看照片，是公告就打開確認面板
+      if (viewablePhotos(item).length) setViewingId(id);
+      else if (isAnnouncement(item)) setPanel('announcements');
       return;
     }
-    const { type, text, color, fontSize, priority, dueAt, imageData, status, tags } = item;
-    setEditing({ id, draft: { type, text, color, fontSize, priority, dueAt, imageData, status, tags } });
+    const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, status, tags } = item;
+    setEditing({
+      id,
+      draft: { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, status, tags },
+    });
   };
 
   const commit = (id: string, geo: Geometry) => {
@@ -321,12 +339,27 @@ export function BoardScreen() {
           onClose={() => setEditing(null)}
           onDelete={editing.id ? () => remove(items.find((i) => i.id === editing.id)!) : undefined}
           onSave={async (draft) => {
+            const hasPhotos = draft.photos.length > 0;
             if (editing.id) {
-              // 公告的內容、時間或重要程度改了 → 大家要重新確認
+              // 公告的內容、照片、時間或重要程度改了 → 大家要重新確認（只換封面、開關輪播不算）
               const old = editing.draft;
-              const changed = draft.text !== old.text || draft.dueAt !== old.dueAt || draft.priority !== old.priority;
-              await editItem(gid, editing.id, draft, changed && draft.priority !== 'none');
-            } else await create(draft, editing.size ?? { w: 220, h: 200 });
+              const changed =
+                draft.text !== old.text ||
+                !samePhotoSet(draft.photos, old.photos) ||
+                draft.dueAt !== old.dueAt ||
+                draft.priority !== old.priority;
+              // 第一次加照片就把卡片拉長；照片全部拿掉就縮回來
+              const h = items.find((i) => i.id === editing.id)?.h;
+              const hadPhotos = old.photos.length > 0;
+              const resize =
+                h !== undefined && hasPhotos !== hadPhotos
+                  ? { h: hasPhotos ? h + PHOTO_ROOM : Math.max(120, h - PHOTO_ROOM) }
+                  : null;
+              await editItem(gid, editing.id, { ...draft, ...resize }, changed && draft.priority !== 'none');
+            } else {
+              const size = editing.size ?? { w: 220, h: 200 };
+              await create(draft, hasPhotos ? { w: size.w, h: size.h + PHOTO_ROOM } : size);
+            }
           }}
         />
       ) : null}
@@ -337,6 +370,9 @@ export function BoardScreen() {
           onChange={(patch) => organizeItem(gid, organizing.id, patch).catch((e) => showError('整理失敗', e))}
           onClose={() => setOrganizingId(null)}
         />
+      ) : null}
+      {viewing && viewingPhotos.length ? (
+        <PhotoViewer photos={viewingPhotos} onClose={() => setViewingId(null)} />
       ) : null}
       {panel === 'stickers' ? <StickerPicker onPick={addSticker} onClose={() => setPanel('none')} /> : null}
       {panel === 'announcements' ? (

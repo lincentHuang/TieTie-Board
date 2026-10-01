@@ -6,14 +6,16 @@ import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Label, Segmented } from '@/components/ui';
 import { countdownLabel, whenLabel } from '@/lib/dates';
-import { NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
+import { MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
+import { PhotoPicker } from './PhotoPicker';
+import { PhotoViewer } from './PhotoViewer';
 
 export type Draft = Pick<
   BoardItem,
-  'type' | 'text' | 'color' | 'fontSize' | 'priority' | 'dueAt' | 'imageData' | 'status' | 'tags'
+  'type' | 'text' | 'color' | 'fontSize' | 'priority' | 'dueAt' | 'imageData' | 'photos' | 'carousel' | 'status' | 'tags'
 >;
 
 const FONT_SIZES = [
@@ -53,7 +55,8 @@ export function ItemEditor({
   const isImage = draft.type === 'image';
 
   const save = async () => {
-    if (!isImage && !draft.text.trim()) return;
+    // 便利貼至少要有文字或照片
+    if (!isImage && !draft.text.trim() && !draft.photos.length) return;
     setBusy(true);
     try {
       await onSave({ ...draft, text: draft.text.trim() });
@@ -75,7 +78,7 @@ export function ItemEditor({
       onClose={onClose}
       footer={
         <>
-          {onDelete ? <Button kind="soft" color={C.urgent} icon="trash-outline" label="刪除" onPress={onDelete} /> : null}
+          {onDelete ? <Button kind="soft" big color={C.urgent} icon="trash-outline" label="刪除" onPress={onDelete} /> : null}
           <Button
             style={{ flex: 1 }}
             big
@@ -86,9 +89,7 @@ export function ItemEditor({
           />
         </>
       }>
-      {isImage && draft.imageData ? (
-        <Image source={{ uri: draft.imageData }} style={s.preview} contentFit="contain" />
-      ) : null}
+      {isImage && draft.imageData ? <Preview uri={draft.imageData} /> : null}
 
       <Label>{isImage ? '說明（選填）' : '內容（第一行會當作標題，顯示在桌面小工具）'}</Label>
       <TextInput
@@ -106,6 +107,20 @@ export function ItemEditor({
 
       {!isImage ? (
         <>
+          <Label>照片（選填，最多 {MAX_PHOTOS} 張）</Label>
+          <PhotoPicker value={draft.photos} onChange={(photos) => set({ photos })} />
+          {draft.photos.length > 1 ? (
+            <>
+              <View style={s.row}>
+                <Label style={s.rowLabel}>在白板上輪播照片</Label>
+                <Switch value={draft.carousel} onValueChange={(carousel) => set({ carousel })} />
+              </View>
+              <Text style={[s.hint, s.hintTight]}>
+                {draft.carousel ? '白板上從封面開始，每幾秒換下一張。' : '白板上只放封面，點照片上的 ☆ 可以換。'}
+                家人點兩下卡片就能看全部照片。
+              </Text>
+            </>
+          ) : null}
           <Label>便利貼顏色</Label>
           <View style={s.colors}>
             {NOTE_COLORS.map((c) => (
@@ -142,7 +157,7 @@ export function ItemEditor({
       </Text>
 
       <View style={s.row}>
-        <Label>日期時間（活動、截止日）</Label>
+        <Label style={s.rowLabel}>日期時間（活動、截止日）</Label>
         <Switch value={draft.dueAt !== null} onValueChange={(on) => set({ dueAt: on ? defaultDue() : null })} />
       </View>
       {draft.dueAt !== null ? (
@@ -159,6 +174,19 @@ export function ItemEditor({
       <Label>標籤</Label>
       <TagPicker value={draft.tags} suggestions={tagSuggestions} onChange={(tags) => set({ tags })} />
     </Sheet>
+  );
+}
+
+/** 拍立得的預覽：點一下全螢幕放大看 */
+function Preview({ uri }: { uri: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)} accessibilityLabel="放大看圖片">
+        <Image source={{ uri }} style={s.preview} contentFit="contain" />
+      </Pressable>
+      {open ? <PhotoViewer photos={[uri]} onClose={() => setOpen(false)} /> : null}
+    </>
   );
 }
 
@@ -179,5 +207,8 @@ const s = StyleSheet.create({
   swatch: { width: 36, height: 36, borderRadius: 18, borderWidth: 2, borderColor: C.line },
   swatchActive: { borderWidth: 4, borderColor: C.primary },
   hint: { fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 18 },
-  row: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  hintTight: { marginTop: 0 },
+  // 標題的上下間距移到整排上，開關才會跟文字置中對齊
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 18, marginBottom: 8 },
+  rowLabel: { marginTop: 0, marginBottom: 0, flexShrink: 1 },
 });
