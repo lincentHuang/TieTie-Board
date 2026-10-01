@@ -46,7 +46,11 @@ example
 /ios
 /android
 
-# Firebase
-.env
+# Firebase（.env 放正式專案設定，不進 git；.env.emulator 只連本機模擬器，可以進 git）
+.env*
+!.env.emulator
 firebase-debug.log
 firestore-debug.log
+
+# Vercel（專案連結資訊）
+.vercel

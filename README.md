@@ -37,7 +37,30 @@ npm run emulators   # 終端機 1：啟動 Firebase 模擬器（需要 Java，�
 npm run dev:web     # 終端機 2：開網頁版 http://localhost:8081
 ```
 
-## 連接真正的 Firebase（給家人實際使用）
+## 正式環境（家人實際使用中）
+
+- 網址：<https://tietie-board.vercel.app>（Vercel 專案 `tietie-board`）
+- Firebase 專案：`tietie-board`（免費 Spark 方案，Firestore 在台灣 `asia-east1`）
+- 匿名登入的「自動清理」**不要開**：成員身分綁在匿名帳號上，清掉就會變成陌生人
+- 瀏覽器 API key 在 Google Cloud 只開放 Cloud Firestore、Identity Toolkit、Token Service 三種 API
+
+### 自動部署
+
+**推到 `main` 就會自動更新網站**（Vercel 連著 GitHub，大約 1～2 分鐘）。其他分支不會部署（見 `vercel.json` 的 `git.deploymentEnabled`）。
+
+- Firebase 設定值放在 Vercel 專案的環境變數（Production），**不在 GitHub 上**（repo 是公開的）。
+  本機開發用的 `.env` 一樣不進 git。
+- 這些 `EXPO_PUBLIC_` 值會打包進網頁，本來就是公開的；真正擋外人的是 `firestore.rules` 和 API key 的限制。
+- 部署失敗時，到 Vercel 專案的 Deployments 頁看紀錄；網站會維持上一個成功的版本。
+
+權限規則**不會**自動部署（改錯可能讓資料外洩或全家打不開，而且自動部署要把 Firebase 管理金鑰放上 GitHub），
+改了 `firestore.rules` 要手動上傳（需要先 `npx firebase-tools login`）：
+
+```bash
+npm run deploy:rules
+```
+
+## 自己架一套 Firebase
 
 1. 到 <https://console.firebase.google.com> 建立專案
 2. **Authentication** → 登入方式 → 啟用「匿名」
