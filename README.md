@@ -5,7 +5,8 @@
 ## 功能
 
 - **多個公布欄**：同時加入家裡、社團好幾個公布欄，點左上角的名稱切換，或用邀請碼加入 / 建立新的
-- **LINE 一點就加入**：把邀請連結貼到 LINE 家庭群組，家人點開就在 LINE 裡打開公布欄，用自己的 LINE 名字和大頭貼直接加入（不用取暱稱、不用輸入邀請碼；設定方式見下面「LINE 登入」）
+- **LINE 一點就加入**：把邀請連結貼到 LINE 家庭群組，家人點開就在 LINE 裡打開公布欄，用自己的 LINE 名字和大頭貼直接加入（不用取暱稱、不用輸入邀請碼）
+- **Google 登入當備案**：在電腦上看、或沒有 LINE 的人用 Google 帳號登入，一樣帶入名字和大頭貼（設定方式見下面「登入方式」）
 - **自由白板**：像 Figma 一樣拖曳移動、拖四個角調整大小、雙指 / Ctrl＋滾輪縮放
 - **便利貼、圖片、貼圖**：圖片會自動壓縮後存進 Firestore（不需要 Firebase 付費方案）
 - **重要公告**：分「重要」「緊急」，每個人都要按「我知道了」；發文的人看得到誰還沒看
@@ -36,7 +37,7 @@
 | 按「我知道了」、通報的「收到」 | 每個人只能幫自己按 |
 | 快速通報 | 所有成員都能發（只能用自己的名義、時間由伺服器決定、最多 40 字），只有發的人能刪 |
 | 推播代碼 | 每個人只能記自己的 |
-| 頭像 | 每個人只能改自己的，而且只能是 LINE 大頭貼網址（`profile.line-scdn.net`） |
+| 頭像 | 每個人只能改自己的，而且只能是 LINE / Google 大頭貼網址（`profile.line-scdn.net`、`lh3.googleusercontent.com`） |
 | LINE 帳號對照表（`lineAccounts`） | 只有伺服器（`/api/line-login`）能讀寫 |
 
 規則在 `firestore.rules`。
@@ -124,7 +125,18 @@ npx expo run:android   # 需要 Android Studio
 - iOS 對背景推播有次數限制，而且使用者手動把 App 滑掉後就不會在背景叫醒；這時通知照樣會跳，小工具等下次打開 App 再更新
 - 推播代碼記在 `groups/{邀請碼}/members/{uid}` 的 `pushToken`，只有同一個公布欄的成員讀得到
 
-## LINE 登入（家庭群組一點就加入）
+## 登入方式：LINE 為主、Google 備案
+
+| 在哪裡打開 | 登入方式 |
+|---|---|
+| LINE 裡（從家庭群組點邀請連結） | 自動用 LINE 登入，什麼都不用按 |
+| 電腦或手機的一般瀏覽器 | 「用 LINE 登入」或「沒有 LINE？用 Google 登入」，也可以不登入、自己取暱稱 |
+| 手機 App | 目前還是匿名登入、自己取暱稱 |
+
+登入後名字和大頭貼跟著帳號走；換手機、換電腦，用同一個 LINE / Google 帳號登入就還是同一個人。
+已經加入公布欄的匿名成員，可以在「我的公布欄」（點左上角的名稱）最下面登入，原本的公布欄、便利貼都會留著。
+
+### LINE 登入（家庭群組一點就加入）
 
 網頁版放在 LINE 的 **LINE MINI App**（LIFF）裡：家人在 LINE 群組點邀請連結
 `https://miniapp.line.me/{LIFF ID}?join=邀請碼`，就會在 LINE 裡打開公布欄、用 LINE 的名字和大頭貼直接加入。
@@ -134,15 +146,13 @@ npx expo run:android   # 需要 Android Studio
 
 1. 網頁在 LINE 裡打開時 `liff.init()` 自動登入 LINE，拿到 ID token、名字、大頭貼（`src/lib/liff.ts`）
 2. 把 ID token 交給 Vercel Function `api/line-login.ts`，它向 LINE 驗證後發一張 Firebase custom token
-3. 網頁用 `signInWithCustomToken` 登入（`src/lib/line-session.ts`）
+3. 網頁用 `signInWithCustomToken` 登入（`src/lib/sign-in.ts`）
    - 這台裝置原本是匿名成員：沿用同一個 uid，公布欄、便利貼、確認紀錄都留著
    - 同一個 LINE 帳號在別台裝置登入：換回同一個 uid（對照表在 Firestore 的 `lineAccounts/{LINE 使用者 ID}`）
 4. LINE 換了名字或大頭貼，下次打開會自動更新到每個加入的公布欄
 5. 在 LINE 裡打開時，「家人」面板多一個「傳到 LINE 聊天室」按鈕（LINE 的分享對象選擇器）
 
-在一般瀏覽器打開網頁版，設定畫面會有「用 LINE 登入」按鈕。手機 App 版目前還是匿名登入、自己取暱稱。
-
-### 設定步驟（只要做一次）
+設定步驟（只要做一次）：
 
 1. **LINE Developers Console**（<https://developers.line.biz/console/>）建立 Provider，再建立 **LINE MINI App** 頻道（地區選台灣）
    - 頻道裡有 Developing / Review / Published 三組設定，各有自己的 **LIFF ID** 和 **Endpoint URL**
@@ -168,17 +178,32 @@ npx expo run:android   # 需要 Android Studio
 - 這台裝置的匿名成員搬到 LINE 身分時，用舊身分發的便利貼之後就不能再編輯（作者是舊的 uid）
 - 伺服器函式跑在東京（`vercel.json` 的 `regions`），離 LINE 和 Firestore（台灣）比較近
 
+### Google 登入（備案）
+
+用 Firebase 內建的 Google 登入（免費方案就能用），不需要伺服器。
+
+- 用彈出視窗登入：網站在 Vercel、不在 Firebase 的網域上，換頁的登入方式在 Safari / Chrome 擋第三方 Cookie 時會失敗
+- 匿名成員按「用 Google 登入」會直接綁上 Google，uid 不變；這個 Google 帳號在別台裝置用過的話，會換回那個身分（跟 LINE 一樣搬過去）
+- LINE 內建瀏覽器裡不顯示 Google 按鈕（Google 不允許在 App 內嵌的瀏覽器登入），那裡本來就自動用 LINE 登入
+- 已經用 Google 登入的人點了 LINE 邀請連結，會照樣加入公布欄，不會被換成 LINE 帳號
+
+設定步驟（只要做一次）：
+
+1. **Firebase 主控台** → Authentication → 登入方式 → 新增「Google」，填支援電子郵件後啟用
+2. Authentication → 設定 → **授權網域**：加入 `tietie-board.vercel.app`（沒加會顯示「這個網址還沒加進 Firebase 的授權網域」）
+3. 如果 Google Cloud 的瀏覽器 API key 有設「網站限制（HTTP referrer）」，要加上 `tietie-board.firebaseapp.com/*`（登入視窗是從這個網域開的）
+
 ## 檔案結構
 
 ```
 src/app/                  畫面路由（Expo Router），只負責決定顯示哪個畫面
 src/features/board/       白板：Canvas（平移縮放）、CanvasItem（拖曳縮放）、編輯視窗、排隊模式…
-src/features/setup/       加入公布欄：第一次使用（取暱稱、建立 / 加入群組）、切換 / 新增公布欄
+src/features/setup/       加入公布欄：第一次使用（LINE / Google 登入或取暱稱、建立 / 加入群組）、邀請連結、切換 / 新增公布欄
 src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步、收到推播時背景更新
 src/features/alerts/      快速通報：通報面板、App 裡的通報卡片、推播（送出、註冊推播代碼、點通知打開公布欄）
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
-src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、LINE 登入（line*.ts、liff.ts）
+src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）
 api/line-login.ts         Vercel Function：驗證 LINE 登入，發 Firebase 登入憑證
 firestore.rules           資料庫權限規則
 ```

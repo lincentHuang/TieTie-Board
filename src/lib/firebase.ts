@@ -1,8 +1,10 @@
 import { getApps, initializeApp } from 'firebase/app';
-import { connectAuthEmulator, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
+import { connectAuthEmulator, signInAnonymously, signInWithCustomToken, type User } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 
-import { createAuth } from './firebase-auth';
+import { canLoginWithGoogle, createAuth, linkGoogle } from './firebase-auth';
+
+export { canLoginWithGoogle };
 
 const config = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -42,7 +44,21 @@ export async function ensureSignedIn(): Promise<string> {
   return cred.user.uid;
 }
 
-/** 目前登入的帳號；lineSub = 綁定的 LINE 使用者 ID（/api/line-login 發憑證時寫進去的），匿名帳號是 null */
+/** LINE / Google 給的名字和大頭貼（還沒整理成成員資料） */
+export interface RawProfile {
+  name: string | null;
+  photoURL: string | null;
+}
+
+const googleOf = (user: User): RawProfile | null => {
+  const p = user.providerData.find((d) => d.providerId === 'google.com');
+  return p ? { name: p.displayName, photoURL: p.photoURL } : null;
+};
+
+/**
+ * 目前登入的帳號。
+ * lineSub = 綁定的 LINE 使用者 ID（/api/line-login 發憑證時寫進去的）；google = 綁定的 Google 帳號；都沒有就是匿名
+ */
 export async function currentAccount() {
   await auth.authStateReady();
   const user = auth.currentUser;
@@ -56,7 +72,24 @@ export async function currentAccount() {
     uid: user.uid,
     anonymous: user.isAnonymous,
     lineSub: typeof claims.lineSub === 'string' ? claims.lineSub : null,
+    google: googleOf(user),
   };
+}
+
+/**
+ * 用 Google 登入（要在按鈕的 onPress 裡直接呼叫，見 linkGoogle）；使用者取消回傳 null。
+ * - linked：目前的帳號綁上 Google，uid 不變
+ * - switchAccount：這個 Google 帳號在別台裝置用過，呼叫的人搬完成員資料再切換過去
+ */
+export async function googleLogin() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('還沒登入，請重新整理再試一次');
+  const { uid, isAnonymous } = user;
+  const result = await linkGoogle(auth, user);
+  if (!result) return null;
+  if ('linked' in result) return { uid, anonymous: isAnonymous, google: googleOf(result.linked), switchAccount: null };
+  const switchAccount = () => result.switchAccount().then((u) => ({ uid: u.uid, google: googleOf(u) }));
+  return { uid, anonymous: isAnonymous, google: null, switchAccount };
 }
 
 /**

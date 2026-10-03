@@ -4,18 +4,19 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { errorMessage } from './errors';
 import { currentAccount, ensureSignedIn, firebaseConfigured } from './firebase';
 import { forgetLineLogin, lineIdentity } from './liff';
-import type { LineIdentity } from './line';
-import { lineProfile, signInWithLine, syncProfile } from './line-session';
+import { signInWithGoogle, signInWithLine, syncProfile, toProfile, type SignedIn } from './sign-in';
+
+/** 怎麼登入的：LINE / Google 的名字、頭像跟著帳號，不用自己取暱稱 */
+export type AccountKind = 'anonymous' | 'line' | 'google';
 
 interface SessionState {
   status: 'loading' | 'ready' | 'error';
   error?: string;
   uid: string;
   nickname: string | null;
-  /** LINE 大頭貼（用 LINE 登入才有） */
+  /** LINE / Google 大頭貼（用帳號登入才有） */
   avatarUrl: string | null;
-  /** 用 LINE 帳號登入：名字、頭像跟著 LINE，不用自己取暱稱 */
-  lineLinked: boolean;
+  account: AccountKind;
   /** 目前打開的公布欄 */
   groupId: string | null;
   /** 這台裝置加入的所有公布欄（依加入順序） */
@@ -25,6 +26,8 @@ interface SessionState {
   switchGroup: (groupId: string) => Promise<void>;
   /** 從清單拿掉目前的公布欄，換到下一個（都沒有了就回到第一次使用畫面） */
   leaveGroup: () => Promise<void>;
+  /** 用 Google 登入（要在按鈕的 onPress 裡直接呼叫，不然瀏覽器會擋彈出視窗）；使用者取消回傳 false */
+  loginWithGoogle: () => Promise<boolean>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -63,22 +66,43 @@ interface Saved {
   groupIds: string[];
 }
 
-/** 有 LINE 身分就用 LINE 登入，名字頭像跟著 LINE；失敗（例如伺服器還沒設定好）就照舊匿名登入 */
-async function startSession(line: LineIdentity | null, saved: Saved): Promise<Saved & { uid: string; lineLinked: boolean }> {
+type Started = Saved & { uid: string; account: AccountKind };
+
+/** 登入完成：名字或頭像跟上次不一樣就更新到每個公布欄，再存起來 */
+async function settle(saved: Saved, next: SignedIn, account: AccountKind): Promise<Started> {
+  const { uid, profile, groupIds } = next;
+  const groupId = saved.groupId && groupIds.includes(saved.groupId) ? saved.groupId : (groupIds[0] ?? null);
+  if (profile.name !== saved.nickname || profile.avatarUrl !== saved.avatarUrl) {
+    await syncProfile(uid, profile, groupIds);
+  }
+  await Promise.all([
+    saveGroups(groupIds, groupId),
+    AsyncStorage.setItem('nickname', profile.name),
+    saveOptional('avatarUrl', profile.avatarUrl),
+  ]);
+  return { uid, account, nickname: profile.name, avatarUrl: profile.avatarUrl, groupId, groupIds };
+}
+
+/**
+ * 打開時登入：
+ * - 已經用 Google 登入：就是這個人（例如在電腦上點了 LINE 邀請連結，也不會被換成 LINE 帳號）
+ * - 在 LINE 裡打開：用 LINE 登入；失敗（例如伺服器還沒設定好）就照舊匿名登入
+ * - 其他：沿用上次的帳號，沒有就匿名登入
+ */
+async function startSession(saved: Saved): Promise<Started> {
+  const before = await currentAccount();
+  if (before?.google && !before.lineSub) {
+    const next = { uid: before.uid, profile: toProfile(before.google, saved.nickname), groupIds: saved.groupIds };
+    return settle(saved, next, 'google');
+  }
+  // LIFF 打不開（例如本機開發、LIFF ID 設錯）就當作沒有 LINE
+  const line = await lineIdentity().catch((e) => {
+    console.warn('LIFF 初始化失敗', e);
+    return null;
+  });
   if (line) {
     try {
-      const profile = lineProfile(line, saved.nickname);
-      const { uid, groupIds } = await signInWithLine(line, profile, saved.groupIds);
-      const groupId = saved.groupId && groupIds.includes(saved.groupId) ? saved.groupId : (groupIds[0] ?? null);
-      if (profile.name !== saved.nickname || profile.avatarUrl !== saved.avatarUrl) {
-        await syncProfile(uid, profile, groupIds);
-      }
-      await Promise.all([
-        saveGroups(groupIds, groupId),
-        AsyncStorage.setItem('nickname', profile.name),
-        saveOptional('avatarUrl', profile.avatarUrl),
-      ]);
-      return { uid, lineLinked: true, nickname: profile.name, avatarUrl: profile.avatarUrl, groupId, groupIds };
+      return await settle(saved, await signInWithLine(line, saved.nickname, saved.groupIds), 'line');
     } catch (e) {
       console.warn('LINE 登入失敗，改用匿名登入', e);
       forgetLineLogin();
@@ -86,8 +110,8 @@ async function startSession(line: LineIdentity | null, saved: Saved): Promise<Sa
   }
   // 之前用 LINE 登入過、這次 LINE 沒登入（例如在一般瀏覽器）：Firebase 還記得，照樣是同一個人
   const account = await currentAccount();
-  if (account) return { ...saved, uid: account.uid, lineLinked: account.lineSub !== null };
-  return { ...saved, uid: await ensureSignedIn(), lineLinked: false };
+  if (account) return { ...saved, uid: account.uid, account: account.lineSub ? 'line' : 'anonymous' };
+  return { ...saved, uid: await ensureSignedIn(), account: 'anonymous' };
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -96,34 +120,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [uid, setUid] = useState('');
   const [nickname, setNickname] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [lineLinked, setLineLinked] = useState(false);
+  const [account, setAccount] = useState<AccountKind>('anonymous');
   const [groupId, setGroupId] = useState<string | null>(null);
   const [groupIds, setGroupIds] = useState<string[]>([]);
+
+  const apply = (next: Started) => {
+    setUid(next.uid);
+    setNickname(next.nickname);
+    setAvatarUrl(next.avatarUrl);
+    setAccount(next.account);
+    setGroupId(next.groupId);
+    setGroupIds(next.groupIds);
+  };
 
   useEffect(() => {
     (async () => {
       try {
         if (!firebaseConfigured) throw new Error('尚未設定 Firebase（請參考 README 建立 .env）');
-        const [line, [[, nick], [, gid], [, ids], [, avatar]]] = await Promise.all([
-          // LIFF 打不開（例如本機開發、LIFF ID 設錯）就當作沒有 LINE
-          lineIdentity().catch((e) => {
-            console.warn('LIFF 初始化失敗', e);
-            return null;
-          }),
-          AsyncStorage.multiGet(['nickname', 'groupId', 'groupIds', 'avatarUrl']),
+        const [[, nick], [, gid], [, ids], [, avatar]] = await AsyncStorage.multiGet([
+          'nickname',
+          'groupId',
+          'groupIds',
+          'avatarUrl',
         ]);
-        const next = await startSession(line, {
-          nickname: nick,
-          avatarUrl: avatar,
-          groupId: gid,
-          groupIds: parseGroupIds(ids, gid),
-        });
-        setUid(next.uid);
-        setNickname(next.nickname);
-        setAvatarUrl(next.avatarUrl);
-        setLineLinked(next.lineLinked);
-        setGroupId(next.groupId);
-        setGroupIds(next.groupIds);
+        apply(await startSession({ nickname: nick, avatarUrl: avatar, groupId: gid, groupIds: parseGroupIds(ids, gid) }));
         setStatus('ready');
       } catch (e) {
         setError(errorMessage(e));
@@ -138,7 +158,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     uid,
     nickname,
     avatarUrl,
-    lineLinked,
+    account,
     groupId,
     groupIds,
     enterGroup: async (gid, nick) => {
@@ -158,6 +178,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await saveGroups(ids, next);
       setGroupIds(ids);
       setGroupId(next);
+    },
+    loginWithGoogle: async () => {
+      const signed = await signInWithGoogle(nickname, groupIds);
+      if (!signed) return false;
+      apply(await settle({ nickname, avatarUrl, groupId, groupIds }, signed, 'google'));
+      return true;
     },
   };
 

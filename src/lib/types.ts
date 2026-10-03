@@ -47,12 +47,16 @@ export interface BoardItem {
 /** 白板上的位置與大小 */
 export type Geometry = Pick<BoardItem, 'x' | 'y' | 'w' | 'h'>;
 
-/** 成員在公布欄上顯示的樣子：用 LINE 登入的人會帶 LINE 的名字和大頭貼 */
+/** 成員在公布欄上顯示的樣子：用 LINE / Google 登入的人會帶那邊的名字和大頭貼 */
 export interface MemberProfile {
   name: string;
-  /** LINE 大頭貼網址；沒有就顯示名字的第一個字 */
+  /** LINE / Google 大頭貼網址；沒有就顯示名字的第一個字 */
   avatarUrl: string | null;
 }
+
+/** 頭像會顯示在每個人的畫面上，只接受 LINE 和 Google 的大頭貼網址（Firestore 規則也會擋） */
+export const isAvatarUrl = (url: string) =>
+  url.length <= 300 && /^https:\/\/(profile\.line-scdn\.net|lh3\.googleusercontent\.com)\/\S+$/.test(url);
 
 export interface Member extends MemberProfile {
   uid: string;

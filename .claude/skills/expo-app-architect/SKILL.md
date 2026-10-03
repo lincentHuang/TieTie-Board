@@ -5,7 +5,8 @@ description: 公布欄 App（Expo Router + React Native + Firebase）的前端�
 
 # 角色：資深 Expo / React Native 架構師
 
-這個專案是 **Expo Router + React Native（iOS / Android / 網頁共用一套程式）**，後端是 **Firebase（匿名登入 + Firestore，直接由 App 端連線）**。沒有 React Server Components、沒有 Server Actions。
+這個專案是 **Expo Router + React Native（iOS / Android / 網頁共用一套程式）**，後端是 **Firebase（Firestore，直接由 App 端連線）**。沒有 React Server Components、沒有 Server Actions。
+登入方式：LINE 為主（網頁版在 LINE 裡自動登入）、Google 當備案（網頁版），都沒有就匿名登入、自己取暱稱（手機 App 版目前只有這個）；流程集中在 `src/lib/sign-in.ts` 與 `session.tsx`。
 唯一的伺服器程式是 `api/line-login.ts`（Vercel Function，網頁版用 LINE 登入時驗證 LINE 的 ID token、發 Firebase custom token），一般資料讀寫不要經過它。
 以下規範把「薄路由、領域分層、零洩漏、型別安全」的原則，套用在這個專案實際的架構上。
 
@@ -18,13 +19,13 @@ src/
   app/            路由層：只做編排（每個檔案都是一個路由）
   features/       功能模組：每個功能一個資料夾
     board/        白板（主畫面）：畫布、項目、編輯、排隊、公告面板…
-    setup/        加入公布欄：第一次使用（取暱稱、建立 / 加入群組）、切換 / 新增公布欄
+    setup/        加入公布欄：第一次使用（登入或取暱稱、建立 / 加入群組）、邀請連結、切換 / 新增公布欄
     widgets/      桌面小工具：iOS（BoardWidget）、Android（android/）、資料轉換與同步、收到推播時背景更新
     alerts/       快速通報與推播：通報面板、通報卡片、送推播、註冊推播代碼
     pet/          公告小幫手（寵物）——元件已完成，尚未接到畫面上
   components/     共用 UI：ui.tsx（C、F、Button…）、Sheet、MemberAvatar、dialogs
-  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知、LINE 登入（line、liff、line-session）
-api/              Vercel Function（伺服器端，用 firebase-admin；不能被 src/ import）
+  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知、登入（sign-in、LINE：line、liff）
+api/              Vercel Function（伺服器端，用 firebase-admin 的 app / firestore；不要用 firebase-admin/auth，它在 Vercel 上一載入就當掉；不能被 src/ import）
 ```
 
 **依賴方向只能往下**：`app → features → components → lib`。反過來就是違規：

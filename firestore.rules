@@ -25,11 +25,11 @@ service cloud.firestore {
         && (!('carousel' in d) || d.carousel is bool);
     }
 
-    // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE 的大頭貼網址（會顯示在每個人的畫面上）
+    // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE / Google 的大頭貼網址（會顯示在每個人的畫面上）
     function validAvatar(d) {
       return !('avatarUrl' in d)
         || (d.avatarUrl is string && d.avatarUrl.size() <= 300
-          && d.avatarUrl.matches('https://profile[.]line-scdn[.]net/[^ ]+'));
+          && d.avatarUrl.matches('https://(profile[.]line-scdn[.]net|lh3[.]googleusercontent[.]com)/[^ ]+'));
     }
 
     // LINE 帳號 → 成員 uid 的對照表：只有伺服器（/api/line-login，用管理者權限）能讀寫

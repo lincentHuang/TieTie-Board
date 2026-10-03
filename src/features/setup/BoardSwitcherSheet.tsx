@@ -8,6 +8,7 @@ import { watchGroupName } from '@/lib/repo';
 import { useSession } from '@/lib/session';
 import { colorOf } from '@/lib/types';
 
+import { AccountCard } from './AccountCard';
 import { GroupForm } from './GroupForm';
 
 /** 我加入的所有公布欄：點一下切換過去，下面可以再加入或建立一個 */
@@ -58,6 +59,8 @@ export function BoardSwitcherSheet({ onClose }: { onClose: () => void }) {
       </View>
 
       <GroupForm title="新增公布欄" onDone={onClose} />
+
+      <AccountCard hint="登入 LINE 或 Google，換手機、換電腦都還是同一個人" />
     </Sheet>
   );
 }
