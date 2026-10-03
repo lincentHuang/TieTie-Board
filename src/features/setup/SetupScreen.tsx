@@ -5,8 +5,8 @@ import { C, F } from '@/components/ui';
 
 import { GroupForm } from './GroupForm';
 
-/** 第一次使用：取暱稱，然後建立或加入群組 */
-export function SetupScreen() {
+/** 第一次使用：取暱稱（用 LINE 登入就不用），然後建立或加入群組 */
+export function SetupScreen({ initialCode }: { initialCode?: string }) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -15,7 +15,7 @@ export function SetupScreen() {
         <Text style={s.title}>貼貼公布欄</Text>
         <Text style={s.tagline}>家人、社團的重要事，一個都不漏</Text>
 
-        <GroupForm askNickname title="要加入家人的公布欄，還是開一個新的？" />
+        <GroupForm askNickname initialCode={initialCode} title="要加入家人的公布欄，還是開一個新的？" />
       </ScrollView>
     </KeyboardAvoidingView>
   );

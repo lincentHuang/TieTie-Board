@@ -30,6 +30,8 @@ export const C = {
   urgent: '#FF5A6E',
   important: '#FF9F43',
   ok: '#3CC49A',
+  /** LINE 品牌綠（「用 LINE 登入」、「傳到 LINE」按鈕） */
+  lineGreen: '#06C755',
 };
 
 /** 粉圓體只有一種粗細，搭配時不要再設 fontWeight */

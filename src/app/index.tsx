@@ -6,14 +6,20 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useOpenFromNotification } from '@/features/alerts/useOpenFromNotification';
 import { BoardScreen } from '@/features/board/BoardScreen';
 import { SetupScreen } from '@/features/setup/SetupScreen';
+import { useJoinFromLink } from '@/features/setup/useJoinFromLink';
 import { C, F, Ionicons } from '@/components/ui';
+import { joinCodeFrom } from '@/lib/line';
 import { useSession } from '@/lib/session';
 
 export default function Home() {
   const session = useSession();
   // 從桌面小工具或通知點進來：?board=邀請碼 打開那個公布欄，再加 &alert=1 會直接打開快速通報
-  const { board, alert } = useLocalSearchParams<{ board?: string; alert?: string }>();
+  // 從邀請連結點進來：?join=邀請碼（LINE 轉址時會包在 liff.state 裡）
+  const params = useLocalSearchParams<{ board?: string; alert?: string; join?: string; 'liff.state'?: string }>();
+  const { board, alert } = params;
   const known = typeof board === 'string' && session.groupIds.includes(board);
+  const joinCode = joinCodeFrom(params);
+  const joining = useJoinFromLink(joinCode);
   useOpenFromNotification();
 
   useEffect(() => {
@@ -30,7 +36,7 @@ export default function Home() {
     router.setParams({ board: undefined });
   }, [board, known, session]);
 
-  if (session.status === 'loading') {
+  if (session.status === 'loading' || joining) {
     return (
       <View style={s.center}>
         <ActivityIndicator size="large" color={C.primary} />
@@ -54,7 +60,7 @@ export default function Home() {
       onCloseQuickAlert={() => router.setParams({ alert: undefined })}
     />
   ) : (
-    <SetupScreen />
+    <SetupScreen initialCode={joinCode ?? undefined} />
   );
 }
 

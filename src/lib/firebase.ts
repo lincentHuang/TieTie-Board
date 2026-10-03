@@ -1,5 +1,5 @@
 import { getApps, initializeApp } from 'firebase/app';
-import { connectAuthEmulator, signInAnonymously } from 'firebase/auth';
+import { connectAuthEmulator, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 
 import { createAuth } from './firebase-auth';
@@ -39,5 +39,49 @@ export async function ensureSignedIn(): Promise<string> {
   await auth.authStateReady();
   if (auth.currentUser) return auth.currentUser.uid;
   const cred = await signInAnonymously(auth);
+  return cred.user.uid;
+}
+
+/** 目前登入的帳號；lineSub = 綁定的 LINE 使用者 ID（/api/line-login 發憑證時寫進去的），匿名帳號是 null */
+export async function currentAccount() {
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user) return null;
+  // 登入憑證過期又沒網路時讀不到，當作沒綁 LINE（只影響設定畫面要不要問暱稱），App 照常打開
+  const claims = await user.getIdTokenResult().then(
+    (r): Record<string, unknown> => r.claims,
+    (): Record<string, unknown> => ({}),
+  );
+  return {
+    uid: user.uid,
+    anonymous: user.isAnonymous,
+    lineSub: typeof claims.lineSub === 'string' ? claims.lineSub : null,
+  };
+}
+
+/**
+ * 把 LINE 的 ID token 交給伺服器（Vercel 上的 /api/line-login）驗證，換一張 Firebase 登入憑證。
+ * 目前是匿名帳號的話一起送過去，第一次綁 LINE 時沿用同一個 uid，原本的公布欄、便利貼都會留著。
+ */
+export async function exchangeLineToken(lineIdToken: string) {
+  const user = auth.currentUser;
+  const firebaseIdToken = user?.isAnonymous ? await user.getIdToken() : undefined;
+  const res = await fetch('/api/line-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken: lineIdToken, firebaseIdToken }),
+  });
+  const data: unknown = await res.json().catch(() => null);
+  const body = isRecord(data) ? data : {};
+  if (!res.ok || typeof body.token !== 'string' || typeof body.uid !== 'string') {
+    throw new Error(typeof body.error === 'string' ? body.error : `LINE 登入失敗（${res.status}）`);
+  }
+  return { token: body.token, uid: body.uid };
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+export async function signInWithToken(token: string) {
+  const cred = await signInWithCustomToken(auth, token);
   return cred.user.uid;
 }

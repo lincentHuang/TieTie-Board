@@ -30,15 +30,17 @@ import {
   type BoardDigest,
   type BoardItem,
   type Member,
+  type MemberProfile,
   type QuickAlert,
 } from './types';
 
 /**
  * Firestore 結構：
  *   groups/{邀請碼}                 name, ownerId, createdAt
- *   groups/{邀請碼}/members/{uid}   name, joinedAt, pushToken?, pushOS?
+ *   groups/{邀請碼}/members/{uid}   name, avatarUrl?, joinedAt, pushToken?, pushOS?
  *   groups/{邀請碼}/items/{id}      BoardItem（白板上的便利貼 / 圖片 / 貼圖 / 公告）
  *   groups/{邀請碼}/alerts/{id}     QuickAlert（快速通報）
+ *   lineAccounts/{LINE 使用者 ID}   uid（LINE 帳號對應的成員身分，只有伺服器 /api/line-login 能讀寫）
  */
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易看錯的 0/O/1/I
 
@@ -54,7 +56,7 @@ function randomCode() {
   return Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 }
 
-export async function createGroup(name: string, uid: string, nickname: string) {
+export async function createGroup(name: string, uid: string, profile: MemberProfile) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = randomCode();
     const created = await runTransaction(db, async (tx) => {
@@ -63,19 +65,25 @@ export async function createGroup(name: string, uid: string, nickname: string) {
       return true;
     });
     if (created) {
-      await joinGroup(code, uid, nickname);
+      await joinGroup(code, uid, profile);
       return code;
     }
   }
   throw new Error('無法產生邀請碼，請再試一次');
 }
 
-/** 邀請碼不存在時回傳 false */
-export async function joinGroup(gid: string, uid: string, nickname: string) {
+const profileData = (p: MemberProfile) => ({ name: p.name, avatarUrl: p.avatarUrl ?? deleteField() });
+
+/** 邀請碼不存在時回傳 false；已經是成員就只更新名字和頭像 */
+export async function joinGroup(gid: string, uid: string, profile: MemberProfile) {
   if (!(await getDoc(groupRef(gid))).exists()) return false;
-  await setDoc(doc(membersRef(gid), uid), { name: nickname, joinedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(membersRef(gid), uid), { ...profileData(profile), joinedAt: serverTimestamp() }, { merge: true });
   return true;
 }
+
+/** LINE 的名字或大頭貼換了：更新自己在這個公布欄上的樣子 */
+export const updateProfile = (gid: string, uid: string, profile: MemberProfile) =>
+  updateDoc(doc(membersRef(gid), uid), profileData(profile));
 
 export const leaveGroup = (gid: string, uid: string) => deleteDoc(doc(membersRef(gid), uid));
 
@@ -91,8 +99,14 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 export const watchGroupName = (gid: string, cb: (name: string) => void) =>
   onSnapshot(groupRef(gid), (s) => cb(str(s.data()?.name, '公布欄')));
 
+const toMember = (uid: string, d: Record<string, unknown>): Member => ({
+  uid,
+  name: str(d.name, '（未命名）'),
+  avatarUrl: optStr(d.avatarUrl) ?? null,
+});
+
 export const watchMembers = (gid: string, cb: (members: Member[]) => void) =>
-  onSnapshot(membersRef(gid), (s) => cb(s.docs.map((d) => ({ uid: d.id, name: str(d.data().name, '（未命名）') }))));
+  onSnapshot(membersRef(gid), (s) => cb(s.docs.map((d) => toMember(d.id, d.data()))));
 
 function toItem(id: string, d: Record<string, unknown>): BoardItem {
   return {

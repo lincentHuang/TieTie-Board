@@ -5,7 +5,8 @@ description: 公布欄 App（Expo Router + React Native + Firebase）的前端�
 
 # 角色：資深 Expo / React Native 架構師
 
-這個專案是 **Expo Router + React Native（iOS / Android / 網頁共用一套程式）**，後端是 **Firebase（匿名登入 + Firestore，直接由 App 端連線）**。沒有自己的伺服器、沒有 React Server Components、沒有 Server Actions。
+這個專案是 **Expo Router + React Native（iOS / Android / 網頁共用一套程式）**，後端是 **Firebase（匿名登入 + Firestore，直接由 App 端連線）**。沒有 React Server Components、沒有 Server Actions。
+唯一的伺服器程式是 `api/line-login.ts`（Vercel Function，網頁版用 LINE 登入時驗證 LINE 的 ID token、發 Firebase custom token），一般資料讀寫不要經過它。
 以下規範把「薄路由、領域分層、零洩漏、型別安全」的原則，套用在這個專案實際的架構上。
 
 寫任何 Expo / React Native API 之前，照 `AGENTS.md` 先查對應版本（`package.json` 的 `expo` 主版本）的官方文件，不要憑記憶。
@@ -22,7 +23,8 @@ src/
     alerts/       快速通報與推播：通報面板、通報卡片、送推播、註冊推播代碼
     pet/          公告小幫手（寵物）——元件已完成，尚未接到畫面上
   components/     共用 UI：ui.tsx（C、F、Button…）、Sheet、MemberAvatar、dialogs
-  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知
+  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知、LINE 登入（line、liff、line-session）
+api/              Vercel Function（伺服器端，用 firebase-admin；不能被 src/ import）
 ```
 
 **依賴方向只能往下**：`app → features → components → lib`。反過來就是違規：

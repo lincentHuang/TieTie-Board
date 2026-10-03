@@ -5,6 +5,7 @@
 ## 功能
 
 - **多個公布欄**：同時加入家裡、社團好幾個公布欄，點左上角的名稱切換，或用邀請碼加入 / 建立新的
+- **LINE 一點就加入**：把邀請連結貼到 LINE 家庭群組，家人點開就在 LINE 裡打開公布欄，用自己的 LINE 名字和大頭貼直接加入（不用取暱稱、不用輸入邀請碼；設定方式見下面「LINE 登入」）
 - **自由白板**：像 Figma 一樣拖曳移動、拖四個角調整大小、雙指 / Ctrl＋滾輪縮放
 - **便利貼、圖片、貼圖**：圖片會自動壓縮後存進 Firestore（不需要 Firebase 付費方案）
 - **重要公告**：分「重要」「緊急」，每個人都要按「我知道了」；發文的人看得到誰還沒看
@@ -35,6 +36,8 @@
 | 按「我知道了」、通報的「收到」 | 每個人只能幫自己按 |
 | 快速通報 | 所有成員都能發（只能用自己的名義、時間由伺服器決定、最多 40 字），只有發的人能刪 |
 | 推播代碼 | 每個人只能記自己的 |
+| 頭像 | 每個人只能改自己的，而且只能是 LINE 大頭貼網址（`profile.line-scdn.net`） |
+| LINE 帳號對照表（`lineAccounts`） | 只有伺服器（`/api/line-login`）能讀寫 |
 
 規則在 `firestore.rules`。
 
@@ -121,6 +124,50 @@ npx expo run:android   # 需要 Android Studio
 - iOS 對背景推播有次數限制，而且使用者手動把 App 滑掉後就不會在背景叫醒；這時通知照樣會跳，小工具等下次打開 App 再更新
 - 推播代碼記在 `groups/{邀請碼}/members/{uid}` 的 `pushToken`，只有同一個公布欄的成員讀得到
 
+## LINE 登入（家庭群組一點就加入）
+
+網頁版放在 LINE 的 **LINE MINI App**（LIFF）裡：家人在 LINE 群組點邀請連結
+`https://miniapp.line.me/{LIFF ID}?join=邀請碼`，就會在 LINE 裡打開公布欄、用 LINE 的名字和大頭貼直接加入。
+沒設定 `EXPO_PUBLIC_LIFF_ID` 時一切照舊（匿名登入、自己取暱稱、輸入邀請碼）。
+
+運作方式：
+
+1. 網頁在 LINE 裡打開時 `liff.init()` 自動登入 LINE，拿到 ID token、名字、大頭貼（`src/lib/liff.ts`）
+2. 把 ID token 交給 Vercel Function `api/line-login.ts`，它向 LINE 驗證後發一張 Firebase custom token
+3. 網頁用 `signInWithCustomToken` 登入（`src/lib/line-session.ts`）
+   - 這台裝置原本是匿名成員：沿用同一個 uid，公布欄、便利貼、確認紀錄都留著
+   - 同一個 LINE 帳號在別台裝置登入：換回同一個 uid（對照表在 Firestore 的 `lineAccounts/{LINE 使用者 ID}`）
+4. LINE 換了名字或大頭貼，下次打開會自動更新到每個加入的公布欄
+5. 在 LINE 裡打開時，「家人」面板多一個「傳到 LINE 聊天室」按鈕（LINE 的分享對象選擇器）
+
+在一般瀏覽器打開網頁版，設定畫面會有「用 LINE 登入」按鈕。手機 App 版目前還是匿名登入、自己取暱稱。
+
+### 設定步驟（只要做一次）
+
+1. **LINE Developers Console**（<https://developers.line.biz/console/>）建立 Provider，再建立 **LINE MINI App** 頻道（地區選台灣）
+   - 頻道裡有 Developing / Review / Published 三組設定，各有自己的 **LIFF ID** 和 **Endpoint URL**
+   - Endpoint URL 都填 `https://tietie-board.vercel.app`
+   - 正式給家人用的是 **Published** 那組 LIFF ID（Developing 只有管理員和測試人員打得開）
+   - 不用審核就能以「未驗證 MINI App」發佈（標題列會顯示網域）
+   - **Channel ID** 在「Channel basic settings」分頁
+2. **Firebase 主控台** → 專案設定 → 服務帳戶 → 產生新的私密金鑰（下載一個 JSON 檔）
+   - 這是管理者金鑰，**不能進 git、不能貼到聊天或文件裡**，只貼到 Vercel 的環境變數，貼完就把檔案刪掉
+3. **Vercel 專案** → Settings → Environment Variables（Production）新增：
+
+   | 名稱 | 值 | 說明 |
+   |---|---|---|
+   | `EXPO_PUBLIC_LIFF_ID` | Published 那組 LIFF ID | 會打包進網頁（本來就是公開的） |
+   | `LINE_CHANNEL_ID` | Channel ID | 只有伺服器用，驗證 LINE 的 ID token |
+   | `FIREBASE_SERVICE_ACCOUNT` | 服務帳戶 JSON 整份貼上 | 只有伺服器用，勾選 Sensitive |
+
+4. 上傳權限規則：`npm run deploy:rules`
+5. 推到 `main`（或在 Vercel 重新部署一次），`EXPO_PUBLIC_` 變數要重新建置才會生效
+
+注意：
+- 在 LINE 裡打開的網頁收不到推播（跟一般網頁版一樣），快速通報的推播還是要裝 App 才收得到
+- 這台裝置的匿名成員搬到 LINE 身分時，用舊身分發的便利貼之後就不能再編輯（作者是舊的 uid）
+- 伺服器函式跑在東京（`vercel.json` 的 `regions`），離 LINE 和 Firestore（台灣）比較近
+
 ## 檔案結構
 
 ```
@@ -131,7 +178,8 @@ src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → Swif
 src/features/alerts/      快速通報：通報面板、App 裡的通報卡片、推播（送出、註冊推播代碼、點通知打開公布欄）
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
-src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知
+src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、LINE 登入（line*.ts、liff.ts）
+api/line-login.ts         Vercel Function：驗證 LINE 登入，發 Firebase 登入憑證
 firestore.rules           資料庫權限規則
 ```
 

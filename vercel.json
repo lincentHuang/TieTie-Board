@@ -3,7 +3,8 @@
   "buildCommand": "npx expo export -p web",
   "outputDirectory": "dist",
   "framework": null,
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "regions": ["hnd1"],
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
   "git": {
     "deploymentEnabled": { "**": false, "main": true }
   }

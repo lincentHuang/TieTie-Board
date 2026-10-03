@@ -47,9 +47,15 @@ export interface BoardItem {
 /** 白板上的位置與大小 */
 export type Geometry = Pick<BoardItem, 'x' | 'y' | 'w' | 'h'>;
 
-export interface Member {
-  uid: string;
+/** 成員在公布欄上顯示的樣子：用 LINE 登入的人會帶 LINE 的名字和大頭貼 */
+export interface MemberProfile {
   name: string;
+  /** LINE 大頭貼網址；沒有就顯示名字的第一個字 */
+  avatarUrl: string | null;
+}
+
+export interface Member extends MemberProfile {
+  uid: string;
 }
 
 /** 快速通報：一按就讓全家的手機跳通知、桌面小工具變色提醒；urgent 會用更醒目的紅色 */

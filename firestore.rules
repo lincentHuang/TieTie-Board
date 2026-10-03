@@ -25,6 +25,18 @@ service cloud.firestore {
         && (!('carousel' in d) || d.carousel is bool);
     }
 
+    // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE 的大頭貼網址（會顯示在每個人的畫面上）
+    function validAvatar(d) {
+      return !('avatarUrl' in d)
+        || (d.avatarUrl is string && d.avatarUrl.size() <= 300
+          && d.avatarUrl.matches('https://profile[.]line-scdn[.]net/[^ ]+'));
+    }
+
+    // LINE 帳號 → 成員 uid 的對照表：只有伺服器（/api/line-login，用管理者權限）能讀寫
+    match /lineAccounts/{lineUserId} {
+      allow read, write: if false;
+    }
+
     match /groups/{gid} {
       // 邀請碼就是鑰匙：知道碼才讀得到群組，不開放列出所有群組
       allow get: if signedIn();
@@ -35,9 +47,10 @@ service cloud.firestore {
 
       match /members/{uid} {
         allow read: if signedIn() && isMember(gid);
-        // 只能加入 / 改名 / 離開自己；推播代碼（快速通報用）可以沒有，有的話格式要對
+        // 只能加入 / 改名 / 離開自己；頭像、推播代碼（快速通報用）可以沒有，有的話格式要對
         allow create, update: if signedIn() && request.auth.uid == uid
           && request.resource.data.name is string
+          && validAvatar(request.resource.data)
           && (!('pushToken' in request.resource.data)
             || (request.resource.data.pushToken is string && request.resource.data.pushToken.size() <= 200))
           && (!('pushOS' in request.resource.data) || request.resource.data.pushOS in ['ios', 'android']);
