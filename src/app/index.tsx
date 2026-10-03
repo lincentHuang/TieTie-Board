@@ -1,7 +1,9 @@
+import { router, useLocalSearchParams } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { useOpenFromNotification } from '@/features/alerts/useOpenFromNotification';
 import { BoardScreen } from '@/features/board/BoardScreen';
 import { SetupScreen } from '@/features/setup/SetupScreen';
 import { C, F, Ionicons } from '@/components/ui';
@@ -9,10 +11,24 @@ import { useSession } from '@/lib/session';
 
 export default function Home() {
   const session = useSession();
+  // 從桌面小工具或通知點進來：?board=邀請碼 打開那個公布欄，再加 &alert=1 會直接打開快速通報
+  const { board, alert } = useLocalSearchParams<{ board?: string; alert?: string }>();
+  const known = typeof board === 'string' && session.groupIds.includes(board);
+  useOpenFromNotification();
 
   useEffect(() => {
     if (session.status !== 'loading') SplashScreen.hideAsync();
   }, [session.status]);
+
+  useEffect(() => {
+    if (session.status !== 'ready' || !board) return;
+    if (known && board !== session.groupId) {
+      session.switchGroup(board).catch((e) => console.warn('切換公布欄失敗', e));
+      return;
+    }
+    // 已經切過去了（或不是這台裝置加入的公布欄）→ 參數用完就清掉，下次點同一個連結才會再生效
+    router.setParams({ board: undefined });
+  }, [board, known, session]);
 
   if (session.status === 'loading') {
     return (
@@ -30,7 +46,16 @@ export default function Home() {
       </View>
     );
   }
-  return session.groupId ? <BoardScreen key={session.groupId} /> : <SetupScreen />;
+  return session.groupId ? (
+    <BoardScreen
+      key={session.groupId}
+      // 要切換公布欄時，等切過去再打開，通報才會發到對的公布欄
+      quickAlert={alert === '1' && !board}
+      onCloseQuickAlert={() => router.setParams({ alert: undefined })}
+    />
+  ) : (
+    <SetupScreen />
+  );
 }
 
 const s = StyleSheet.create({

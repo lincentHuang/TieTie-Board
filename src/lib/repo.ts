@@ -2,32 +2,50 @@ import { getRandomBytes } from 'expo-crypto';
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
   addDoc,
+  where,
   type DocumentData,
+  type Query,
 } from 'firebase/firestore';
 
 import { db } from './firebase';
-import { ITEM_TYPES, PRIORITIES, STATUSES, type BoardItem, type Member } from './types';
+import {
+  ALERT_LEVELS,
+  ITEM_TYPES,
+  PRIORITIES,
+  STATUSES,
+  type BoardDigest,
+  type BoardItem,
+  type Member,
+  type QuickAlert,
+} from './types';
 
 /**
  * Firestore 結構：
  *   groups/{邀請碼}                 name, ownerId, createdAt
- *   groups/{邀請碼}/members/{uid}   name, joinedAt
+ *   groups/{邀請碼}/members/{uid}   name, joinedAt, pushToken?, pushOS?
  *   groups/{邀請碼}/items/{id}      BoardItem（白板上的便利貼 / 圖片 / 貼圖 / 公告）
+ *   groups/{邀請碼}/alerts/{id}     QuickAlert（快速通報）
  */
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易看錯的 0/O/1/I
 
 const groupRef = (gid: string) => doc(db, 'groups', gid);
 const itemsRef = (gid: string) => collection(db, 'groups', gid, 'items');
 const membersRef = (gid: string) => collection(db, 'groups', gid, 'members');
+const alertsRef = (gid: string) => collection(db, 'groups', gid, 'alerts');
 
 export const normalizeCode = (input: string) => input.trim().toUpperCase();
 
@@ -140,3 +158,144 @@ export const acknowledge = (gid: string, id: string, uid: string) =>
   updateDoc(doc(itemsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });
 
 export const deleteItem = (gid: string, id: string) => deleteDoc(doc(itemsRef(gid), id));
+
+/* ---------- 快速通報 ---------- */
+
+function toAlert(id: string, d: Record<string, unknown>): QuickAlert {
+  return {
+    id,
+    emoji: str(d.emoji, '📣'),
+    text: str(d.text, ''),
+    level: oneOf(ALERT_LEVELS, d.level, 'normal'),
+    authorId: str(d.authorId, ''),
+    authorName: str(d.authorName, ''),
+    // 剛送出、伺服器時間還沒回來時先用本機時間
+    createdAt: millis(d.createdAt) ?? Date.now(),
+    ackBy: isRecord(d.ackBy) ? d.ackBy : {},
+  };
+}
+
+/** 只抓最近幾則（舊的通報留在資料庫裡，但不會再下載） */
+const recentAlerts = (gid: string) => query(alertsRef(gid), orderBy('createdAt', 'desc'), limit(5));
+
+export type NewAlert = Pick<QuickAlert, 'emoji' | 'text' | 'level' | 'authorId' | 'authorName'>;
+
+export const addAlert = (gid: string, alert: NewAlert) =>
+  addDoc(alertsRef(gid), { ...alert, createdAt: serverTimestamp(), ackBy: {} });
+
+/** 按「收到」：每個人只能幫自己按 */
+export const ackAlert = (gid: string, id: string, uid: string) =>
+  updateDoc(doc(alertsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });
+
+/* ---------- 公布欄摘要（桌面小工具、通報用） ---------- */
+
+/** 活動結束超過一天的就不抓了 */
+const EVENT_LOOKBACK = 86_400_000;
+
+/**
+ * 小工具只需要公告與有日期的項目，不用把整面白板（含照片）都抓下來。
+ * 拆成兩個單欄位查詢，Firestore 會自動建索引，不用另外設定。
+ */
+const digestItemQueries = (gid: string) => [
+  query(itemsRef(gid), where('priority', 'in', ['important', 'urgent'])),
+  query(itemsRef(gid), where('dueAt', '>=', Timestamp.fromMillis(Date.now() - EVENT_LOOKBACK))),
+];
+
+/** 兩個查詢可能抓到同一個項目（有日期的公告），用 id 合併 */
+const mergeById = (lists: BoardItem[][]) => [...new Map(lists.flat().map((i) => [i.id, i])).values()];
+
+const itemsOf = (docs: { id: string; data: () => Record<string, unknown> }[]) =>
+  docs.map((d) => toItem(d.id, d.data()));
+
+/**
+ * 即時訂閱一個公布欄的摘要；全部查詢都回來後才第一次通知，避免小工具先閃一下空的。
+ * 讀取失敗（例如已經被移出群組）會呼叫 onError，摘要就不再更新。
+ */
+export function watchBoardDigest(gid: string, cb: (digest: BoardDigest) => void, onError: (e: unknown) => void) {
+  let name: string | undefined;
+  let alerts: QuickAlert[] | undefined;
+  const itemLists: (BoardItem[] | undefined)[] = [undefined, undefined];
+  const emit = () => {
+    if (name === undefined || alerts === undefined || itemLists.some((l) => l === undefined)) return;
+    cb({ gid, name, alerts, items: mergeById(itemLists as BoardItem[][]) });
+  };
+  const unsubs = [
+    onSnapshot(
+      groupRef(gid),
+      (s) => {
+        name = str(s.data()?.name, '公布欄');
+        emit();
+      },
+      onError,
+    ),
+    onSnapshot(
+      recentAlerts(gid),
+      (s) => {
+        alerts = s.docs.map((d) => toAlert(d.id, d.data()));
+        emit();
+      },
+      // 讀不到通報（例如權限規則還沒更新）就當作沒有通報，公告、活動照常顯示
+      (e) => {
+        console.warn('讀取快速通報失敗', gid, e);
+        alerts = [];
+        emit();
+      },
+    ),
+    ...digestItemQueries(gid).map((q: Query, i) =>
+      onSnapshot(
+        q,
+        (s) => {
+          itemLists[i] = itemsOf(s.docs);
+          emit();
+        },
+        onError,
+      ),
+    ),
+  ];
+  return () => unsubs.forEach((u) => u());
+}
+
+/** 不靠畫面、抓一次摘要（App 在背景收到推播、Android 小工具定時更新時用） */
+export async function fetchBoardDigest(gid: string): Promise<BoardDigest> {
+  const [group, alerts, ...itemSnaps] = await Promise.all([
+    getDoc(groupRef(gid)),
+    // 讀不到通報就當作沒有，公告、活動照常更新
+    getDocs(recentAlerts(gid)).then(
+      (s) => s.docs.map((d) => toAlert(d.id, d.data())),
+      () => [],
+    ),
+    ...digestItemQueries(gid).map((q) => getDocs(q)),
+  ]);
+  return {
+    gid,
+    name: str(group.data()?.name, '公布欄'),
+    alerts,
+    items: mergeById(itemSnaps.map((s) => itemsOf(s.docs))),
+  };
+}
+
+/* ---------- 推播 ---------- */
+
+export type PushOS = 'ios' | 'android';
+export interface PushRecipient {
+  token: string;
+  os: PushOS | null;
+}
+
+/** 把這台裝置的推播代碼記在自己的成員資料上；null = 清掉（例如關掉通知權限） */
+export const savePushToken = (gid: string, uid: string, token: string | null, os: PushOS) =>
+  updateDoc(
+    doc(membersRef(gid), uid),
+    token ? { pushToken: token, pushOS: os } : { pushToken: deleteField(), pushOS: deleteField() },
+  );
+
+/** 群組裡其他人的推播代碼（自己不用通知自己） */
+export async function fetchPushRecipients(gid: string, exceptUid: string): Promise<PushRecipient[]> {
+  const snap = await getDocs(membersRef(gid));
+  return snap.docs.flatMap((d) => {
+    const data = d.data();
+    if (d.id === exceptUid || typeof data.pushToken !== 'string') return [];
+    const os: PushOS | null = data.pushOS === 'ios' || data.pushOS === 'android' ? data.pushOS : null;
+    return [{ token: data.pushToken, os }];
+  });
+}

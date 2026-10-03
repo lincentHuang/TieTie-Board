@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 
-import { buildWidgetSource } from '@/features/widgets/widget-data';
-import { syncWidget } from '@/features/widgets/widget-sync';
 import { syncReminders } from '@/lib/reminders';
 import { watchGroupName, watchItems, watchMembers } from '@/lib/repo';
 import type { BoardItem, Member } from '@/lib/types';
 
-/** 即時同步白板內容，並順便更新桌面小工具與提醒通知 */
-export function useBoard(groupId: string, uid: string) {
+/** 即時同步白板內容，並順便排好提醒通知（桌面小工具由 useWidgetSync 負責，涵蓋所有公布欄） */
+export function useBoard(groupId: string) {
   const [items, setItems] = useState<BoardItem[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [groupName, setGroupName] = useState('公布欄');
@@ -23,9 +21,8 @@ export function useBoard(groupId: string, uid: string) {
 
   useEffect(() => {
     if (!items) return;
-    syncWidget(buildWidgetSource(items, uid, groupName)).catch((e) => console.warn('更新小工具失敗', e));
     syncReminders(items).catch((e) => console.warn('排程提醒失敗', e));
-  }, [items, uid, groupName]);
+  }, [items]);
 
   return { items, members, groupName };
 }

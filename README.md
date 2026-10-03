@@ -4,13 +4,20 @@
 
 ## 功能
 
+- **多個公布欄**：同時加入家裡、社團好幾個公布欄，點左上角的名稱切換，或用邀請碼加入 / 建立新的
 - **自由白板**：像 Figma 一樣拖曳移動、拖四個角調整大小、雙指 / Ctrl＋滾輪縮放
 - **便利貼、圖片、貼圖**：圖片會自動壓縮後存進 Firestore（不需要 Firebase 付費方案）
 - **重要公告**：分「重要」「緊急」，每個人都要按「我知道了」；發文的人看得到誰還沒看
 - **日期時間**：公告可以設活動時間，白板、小工具都會倒數，並在前一天、前一小時、準時發通知
 - **桌面小工具**
-  - iOS：小 / 中 / 大 / iPad 特大，加上鎖定畫面；時間到了會自動換下一件事
-  - Android：可自由拉伸大小，每 30 分鐘自動更新
+  - 每個加入的公布欄一頁：按 ‹ › 切換（iOS 大尺寸下面還有分頁），點一下打開那個公布欄
+  - 即時更新：App 開著時馬上更新；App 沒開時，有人發新公告、改活動或快速通報，會用推播叫醒 App 在背景更新
+  - iOS：小 / 中 / 大 / iPad 特大，加上鎖定畫面；時間到了會自動換下一件事；切換要 iOS 17 以上
+  - Android：可自由拉伸大小，每個小工具可以停在不同的公布欄，每 30 分鐘也會自己抓最新資料
+- **快速通報**：按右上角的 📣（或小工具上的「📣 通報」），一鍵送出「開飯囉」「我到家了」「緊急！請馬上看手機」…
+  - 每個人的手機跳通知，桌面小工具整個變色顯示通報（30 分鐘後恢復），就算正在看別的公布欄也會切過來
+  - App 裡會跳出卡片，按「收到 👍」；發通報的人看得到幾個人收到了
+- **新公告推播**：有人發「重要 / 緊急」公告時，其他人會收到通知
 - 公告的內容或時間被修改後，大家要重新確認
 - **公告小幫手（寵物系統）**
   - 捏寵物：狗狗、貓咪、兔兔、熊熊、倉鼠，7 種毛色、6 種配件，還能取名字
@@ -25,7 +32,9 @@
 |---|---|
 | 移動、調整大小、調整圖層 | 所有成員 |
 | 修改內容、刪除 | 只有發文的人 |
-| 按「我知道了」 | 每個人只能幫自己按 |
+| 按「我知道了」、通報的「收到」 | 每個人只能幫自己按 |
+| 快速通報 | 所有成員都能發（只能用自己的名義、時間由伺服器決定、最多 40 字），只有發的人能刪 |
+| 推播代碼 | 每個人只能記自己的 |
 
 規則在 `firestore.rules`。
 
@@ -91,14 +100,35 @@ npx expo run:android   # 需要 Android Studio
 或用 EAS 雲端建置（不需要本機 Xcode）：`npx eas-cli@latest build --profile development`
 
 > 資料夾名稱有中文，CocoaPods 需要 UTF-8：執行前先 `export LANG=en_US.UTF-8`
+>
+> iOS 小工具（expo-widgets）用到 iOS 26 的 API，本機建置需要 **Xcode 26 以上**；Xcode 比較舊的話改用 EAS 雲端建置。
+>
+> Android 的小工具用 react-native-android-widget，所以 `package.json` 的 `expo.autolinking.android.exclude` 讓 Android 不連結 expo-widgets：
+> 兩個一起連結時 WorkManager 的類別會重複（`work-runtime` 與 `work-runtime-ktx`），Android 會編譯失敗。
+
+### 推播設定（快速通報、小工具背景更新要用）
+
+推播透過 Expo 的免費推播服務轉送，不需要自己的伺服器，但要先完成下面幾步（只要做一次），之後重新建置 App：
+
+1. `npx eas-cli@latest init`：建立 EAS 專案，會把 `extra.eas.projectId` 寫進 `app.json`（沒有它就拿不到推播代碼，App 會在主控台提示）
+2. iOS：用 EAS 建置時選擇讓 EAS 管理 Push Notifications 金鑰（`npx eas-cli@latest credentials` 也可以設定）
+3. Android：在 Firebase 專案新增 Android 應用程式（套件名稱 `com.huanglingcheng.tietieboard`），
+   下載 `google-services.json` 放到專案根目錄、在 `app.json` 的 `android` 加上 `"googleServicesFile": "./google-services.json"`，
+   再到 Firebase 專案設定 → 服務帳戶 產生 FCM V1 金鑰，用 `npx eas-cli@latest credentials` 上傳
+
+注意：
+- 網頁版可以「送」通報與推播，但網頁版本身收不到推播（開著網頁時一樣會即時看到通報卡片）
+- iOS 對背景推播有次數限制，而且使用者手動把 App 滑掉後就不會在背景叫醒；這時通知照樣會跳，小工具等下次打開 App 再更新
+- 推播代碼記在 `groups/{邀請碼}/members/{uid}` 的 `pushToken`，只有同一個公布欄的成員讀得到
 
 ## 檔案結構
 
 ```
 src/app/                  畫面路由（Expo Router），只負責決定顯示哪個畫面
 src/features/board/       白板：Canvas（平移縮放）、CanvasItem（拖曳縮放）、編輯視窗、排隊模式…
-src/features/setup/       第一次使用：取暱稱、建立 / 加入群組
-src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步
+src/features/setup/       加入公布欄：第一次使用（取暱稱、建立 / 加入群組）、切換 / 新增公布欄
+src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步、收到推播時背景更新
+src/features/alerts/      快速通報：通報面板、App 裡的通報卡片、推播（送出、註冊推播代碼、點通知打開公布欄）
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
 src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知
@@ -110,6 +140,5 @@ firestore.rules           資料庫權限規則
 
 ## 之後可以加
 
-- 推播通知：有人發新公告時立刻通知大家（可用 Expo Push，不需要 Firebase 付費方案）
 - iOS 即時動態（Live Activity）：緊急公告常駐在鎖定畫面 / 動態島
 - 看板模式：舊平板放在冰箱上，全螢幕輪播公告

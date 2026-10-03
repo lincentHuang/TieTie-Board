@@ -28,6 +28,12 @@ if (emulatorHost) {
   connectFirestoreEmulator(db, emulatorHost, 8080);
 }
 
+/** 已經登入過才回傳 uid，不會建立新帳號（背景任務用：新帳號不是任何群組的成員，什麼都讀不到） */
+export async function signedInUid(): Promise<string | null> {
+  await auth.authStateReady();
+  return auth.currentUser?.uid ?? null;
+}
+
 /** 匿名登入，回傳 uid（重開 App 會沿用同一個帳號） */
 export async function ensureSignedIn(): Promise<string> {
   await auth.authStateReady();

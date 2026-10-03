@@ -5,10 +5,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { askConfirm, showError } from '@/components/dialogs';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { C, F, Ionicons, Squishy, type IconName } from '@/components/ui';
+import { AlertOverlay } from '@/features/alerts/AlertOverlay';
+import { notifyBoardChange } from '@/features/alerts/notify';
+import { QuickAlertSheet } from '@/features/alerts/QuickAlertSheet';
+import { usePushRegistration } from '@/features/alerts/usePushRegistration';
+import { BoardSwitcherSheet } from '@/features/setup/BoardSwitcherSheet';
+import { useWidgetSync } from '@/features/widgets/useWidgetSync';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { pickImage } from '@/lib/images';
 import { acknowledge, addItem, deleteItem, editItem, leaveGroup, moveItem, organizeItem } from '@/lib/repo';
 import { useSession } from '@/lib/session';
+import { useBoardDigests } from '@/lib/use-board-digests';
 import {
   byUrgency,
   isAckedBy,
@@ -35,18 +42,29 @@ import { useBoard } from './useBoard';
 import { useViewPrefs } from './useViewPrefs';
 
 type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number } };
-type Panel = 'none' | 'stickers' | 'announcements' | 'invite';
+type Panel = 'none' | 'stickers' | 'announcements' | 'invite' | 'boards' | 'alert';
 
 const TOOLBAR_HEIGHT = 76;
 /** 便利貼有照片時多長高一點，文字才不會被照片擠扁 */
 const PHOTO_ROOM = 130;
 
-export function BoardScreen() {
+export function BoardScreen({
+  quickAlert = false,
+  onCloseQuickAlert,
+}: {
+  /** 從小工具的「通報」點進來（網址上的 alert=1）：直接顯示快速通報面板 */
+  quickAlert?: boolean;
+  onCloseQuickAlert?: () => void;
+}) {
   const session = useSession();
   const gid = session.groupId!;
   const uid = session.uid;
   const insets = useSafeAreaInsets();
-  const { items, members, groupName } = useBoard(gid, uid);
+  const { items, members, groupName } = useBoard(gid);
+  // 所有加入的公布欄（不只目前這個）：給桌面小工具與快速通報用
+  const digests = useBoardDigests(session.groupIds);
+  useWidgetSync(digests, uid, gid);
+  usePushRegistration(uid, session.groupIds);
   const canvas = useRef<CanvasHandle>(null);
   const now = useNow();
 
@@ -82,6 +100,9 @@ export function BoardScreen() {
 
   const ack = (item: BoardItem) => acknowledge(gid, item.id, uid).catch((e) => showError('確認失敗', e));
 
+  /** 公告 / 活動有變化時，讓其他人的桌面小工具跟著更新（新公告會跳通知） */
+  const pushCtx = { gid, uid, boardName: groupName, authorName: session.nickname ?? '' };
+
   /** 新項目放在目前畫面正中間，疊在最上層 */
   const placeNew = (w: number, h: number) => {
     const c = canvas.current?.viewCenter() ?? { x: 0, y: 0 };
@@ -101,6 +122,7 @@ export function BoardScreen() {
       authorName: session.nickname ?? '',
     });
     showNew(ref.id);
+    notifyBoardChange(pushCtx, null, draft);
   };
 
   const startNote = (announcement: boolean) =>
@@ -201,6 +223,7 @@ export function BoardScreen() {
     if (!(await askConfirm('刪除這個項目？', itemTitle(item)))) return;
     try {
       await deleteItem(gid, item.id);
+      notifyBoardChange(pushCtx, item, null);
       setSelectedId(null);
       setEditing(null);
     } catch (e) {
@@ -229,12 +252,18 @@ export function BoardScreen() {
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      {/* 頂部：群組名稱、家人、公告按鈕 */}
+      {/* 頂部：群組名稱（點了切換公布欄）、家人、公告按鈕 */}
       <View style={s.header}>
-        <Text style={s.groupName} numberOfLines={1}>
-          {groupName}
-        </Text>
+        <Pressable onPress={() => setPanel('boards')} style={s.titleBtn} accessibilityLabel={`${groupName}，切換或新增公布欄`}>
+          <Text style={s.groupName} numberOfLines={1}>
+            {groupName}
+          </Text>
+          <Ionicons name="chevron-down" size={20} color={C.sub} />
+        </Pressable>
         <MemberRow members={members} uid={uid} unreadOf={unreadOf} onPress={() => setPanel('invite')} />
+        <Squishy onPress={() => setPanel('alert')} style={[s.headerBtn, s.alertBtn]} accessibilityLabel="快速通報">
+          <Ionicons name="megaphone" size={21} color="#FFF" />
+        </Squishy>
         <Squishy onPress={() => setPanel('announcements')} style={s.headerBtn} accessibilityLabel="公告與行程">
           <Ionicons name="calendar" size={22} color={C.primary} />
           {pending.length > 0 ? (
@@ -244,6 +273,15 @@ export function BoardScreen() {
           ) : null}
         </Squishy>
       </View>
+
+      {/* 快速通報：別人剛發的（要按收到）、或我發的有幾個人收到 */}
+      <AlertOverlay
+        digests={digests}
+        uid={uid}
+        gid={gid}
+        memberCount={members.length}
+        onOpenBoard={(target) => session.switchGroup(target).catch((e) => showError('切換失敗', e))}
+      />
 
       {/* 最重要的事：沒確認的公告 > 下一個行程 */}
       {pending.length > 0 ? (
@@ -356,6 +394,7 @@ export function BoardScreen() {
                   ? { h: hasPhotos ? h + PHOTO_ROOM : Math.max(120, h - PHOTO_ROOM) }
                   : null;
               await editItem(gid, editing.id, { ...draft, ...resize }, changed && draft.priority !== 'none');
+              notifyBoardChange(pushCtx, old, draft);
             } else {
               const size = editing.size ?? { w: 220, h: 200 };
               await create(draft, hasPhotos ? { w: size.w, h: size.h + PHOTO_ROOM } : size);
@@ -394,6 +433,19 @@ export function BoardScreen() {
           unreadOf={unreadOf}
           onLeave={leave}
           onClose={() => setPanel('none')}
+        />
+      ) : null}
+      {panel === 'boards' ? <BoardSwitcherSheet onClose={() => setPanel('none')} /> : null}
+      {panel === 'alert' || quickAlert ? (
+        <QuickAlertSheet
+          gid={gid}
+          boardName={groupName}
+          uid={uid}
+          nickname={session.nickname ?? ''}
+          onClose={() => {
+            setPanel('none');
+            onCloseQuickAlert?.();
+          }}
         />
       ) : null}
     </View>
@@ -445,7 +497,8 @@ const s = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   loading: { fontFamily: F.display, fontSize: 16, color: C.sub, marginTop: 14 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
-  groupName: { flex: 1, fontSize: 26, fontFamily: F.display, color: C.ink },
+  titleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  groupName: { flexShrink: 1, fontSize: 26, fontFamily: F.display, color: C.ink },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -477,6 +530,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  alertBtn: { backgroundColor: C.primary, borderColor: '#FFC2D6' },
   badge: {
     position: 'absolute',
     top: -4,

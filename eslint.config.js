@@ -31,7 +31,7 @@ module.exports = defineConfig([
   },
   // 同一個檔案符合多組設定時，後面的會蓋掉前面的，所以每組都列出完整的限制
   { files: ['src/**/*.{ts,tsx}'], rules: { 'no-restricted-imports': restrict(FIREBASE) } },
-  { files: ['src/features/{pet,setup,widgets}/**'], rules: { 'no-restricted-imports': restrict(FIREBASE, BOARD) } },
+  { files: ['src/features/{alerts,pet,setup,widgets}/**'], rules: { 'no-restricted-imports': restrict(FIREBASE, BOARD) } },
   { files: ['src/components/**'], rules: { 'no-restricted-imports': restrict(FIREBASE, FEATURES) } },
   { files: ['src/lib/**'], rules: { 'no-restricted-imports': restrict(FIREBASE, FEATURES, COMPONENTS) } },
   { files: FIREBASE_FILES, rules: { 'no-restricted-imports': restrict(FEATURES, COMPONENTS) } },

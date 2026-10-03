@@ -17,8 +17,9 @@ src/
   app/            路由層：只做編排（每個檔案都是一個路由）
   features/       功能模組：每個功能一個資料夾
     board/        白板（主畫面）：畫布、項目、編輯、排隊、公告面板…
-    setup/        第一次使用：取暱稱、建立 / 加入群組
-    widgets/      桌面小工具：iOS（BoardWidget）、Android（android/）、資料轉換與同步
+    setup/        加入公布欄：第一次使用（取暱稱、建立 / 加入群組）、切換 / 新增公布欄
+    widgets/      桌面小工具：iOS（BoardWidget）、Android（android/）、資料轉換與同步、收到推播時背景更新
+    alerts/       快速通報與推播：通報面板、通報卡片、送推播、註冊推播代碼
     pet/          公告小幫手（寵物）——元件已完成，尚未接到畫面上
   components/     共用 UI：ui.tsx（C、F、Button…）、Sheet、MemberAvatar、dialogs
   lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知

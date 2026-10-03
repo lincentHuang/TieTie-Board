@@ -25,6 +25,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
+    "expo-task-manager": "~57.0.21",
     "expo-web-browser": "~57.0.3",
     "expo-widgets": "~57.0.21",
     "firebase": "^12.19.0",
@@ -58,5 +59,14 @@
     "typecheck": "tsc --noEmit",
     "deploy:rules": "npx firebase-tools@latest deploy --only firestore:rules --project tietie-board"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "android": {
+        "exclude": [
+          "expo-widgets"
+        ]
+      }
+    }
+  }
 }

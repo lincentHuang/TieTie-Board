@@ -44,7 +44,7 @@
             {
               "name": "BoardWidget",
               "displayName": "貼貼公布欄",
-              "description": "大字顯示最重要的公告與即將到來的活動",
+              "description": "切換瀏覽每個公布欄的公告、活動，家人發快速通報時馬上變色提醒",
               "ios": {
                 "supportedFamilies": [
                   "systemSmall",
@@ -67,7 +67,7 @@
             {
               "name": "BoardWidget",
               "label": "貼貼公布欄",
-              "description": "大字顯示最重要的公告與即將到來的活動",
+              "description": "切換瀏覽每個公布欄的公告、活動，家人發快速通報時馬上變色提醒",
               "minWidth": "250dp",
               "minHeight": "180dp",
               "targetCellWidth": 4,
@@ -85,7 +85,12 @@
           "photosPermission": "讓你可以把照片貼到公布欄上"
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
       "expo-font"
     ],
     "experiments": {

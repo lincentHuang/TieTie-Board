@@ -35,8 +35,35 @@ service cloud.firestore {
 
       match /members/{uid} {
         allow read: if signedIn() && isMember(gid);
-        // 只能加入 / 改名 / 離開自己
-        allow create, update, delete: if signedIn() && request.auth.uid == uid;
+        // 只能加入 / 改名 / 離開自己；推播代碼（快速通報用）可以沒有，有的話格式要對
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.name is string
+          && (!('pushToken' in request.resource.data)
+            || (request.resource.data.pushToken is string && request.resource.data.pushToken.size() <= 200))
+          && (!('pushOS' in request.resource.data) || request.resource.data.pushOS in ['ios', 'android']);
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+
+      // 快速通報：成員都能發（只能用自己的名義、時間由伺服器決定），發的人可以收回
+      match /alerts/{alertId} {
+        allow read: if signedIn() && isMember(gid);
+
+        allow create: if signedIn() && isMember(gid)
+          && request.resource.data.keys().hasOnly(['emoji', 'text', 'level', 'authorId', 'authorName', 'createdAt', 'ackBy'])
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.authorName is string && request.resource.data.authorName.size() <= 30
+          && request.resource.data.emoji is string && request.resource.data.emoji.size() <= 16
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 40
+          && request.resource.data.level in ['normal', 'urgent']
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.ackBy == {};
+
+        allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+        // 其他成員：只能在 ackBy 裡加上「自己收到了」
+        allow update: if signedIn() && isMember(gid) && onlyChanges(['ackBy'])
+          && request.resource.data.ackBy.diff(resource.data.ackBy).affectedKeys().hasOnly([request.auth.uid]);
       }
 
       match /items/{itemId} {

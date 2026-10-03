@@ -52,6 +52,41 @@ export interface Member {
   name: string;
 }
 
+/** 快速通報：一按就讓全家的手機跳通知、桌面小工具變色提醒；urgent 會用更醒目的紅色 */
+export type AlertLevel = 'normal' | 'urgent';
+export const ALERT_LEVELS: AlertLevel[] = ['normal', 'urgent'];
+
+export interface QuickAlert {
+  id: string;
+  emoji: string;
+  text: string;
+  level: AlertLevel;
+  authorId: string;
+  authorName: string;
+  createdAt: number;
+  /** uid → 按「收到」的時間 */
+  ackBy: Record<string, unknown>;
+}
+
+/** 通報在 App 與小工具上停留多久（之後就當作過去了） */
+export const ALERT_TTL = 30 * 60_000;
+export const MAX_ALERT_TEXT = 40;
+
+export const isAlertActive = (alert: QuickAlert, now: number) => now - alert.createdAt < ALERT_TTL;
+
+/** 要提醒我的通報：別人發的、還在時效內、我還沒按收到 */
+export const isAlertForMe = (alert: QuickAlert, uid: string, now: number) =>
+  alert.authorId !== uid && !(uid in alert.ackBy) && isAlertActive(alert, now);
+
+/** 一個公布欄給小工具與通報用的摘要：只有公告、有日期的項目與最近的通報（不含一般便利貼，資料量小） */
+export interface BoardDigest {
+  gid: string;
+  name: string;
+  items: BoardItem[];
+  /** 新的在前 */
+  alerts: QuickAlert[];
+}
+
 export const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
   none: { label: '一般', color: '#8C84A8' },
   important: { label: '重要', color: '#FF9F43' },
@@ -100,7 +135,7 @@ export const isAckedBy = (item: BoardItem, uid: string) =>
   !isAnnouncement(item) || item.authorId === uid || uid in item.ackBy;
 
 /** 取得公告的標題：第一行文字 */
-export const itemTitle = (item: BoardItem) => {
+export const itemTitle = (item: Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos'>) => {
   if (item.type === 'image') return item.text.split('\n')[0] || '圖片';
   if (item.type === 'sticker') return item.sticker ?? '貼圖';
   return item.text.split('\n')[0] || (item.photos.length ? '照片' : '（沒有文字）');
