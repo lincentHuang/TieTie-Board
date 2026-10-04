@@ -10,6 +10,10 @@
 - **Google 登入當備案**：在電腦上看、或沒有 LINE 的人用 Google 帳號登入，一樣帶入名字和大頭貼（設定方式見下面「登入方式」）
 - **自由白板**：像 Figma 一樣拖曳移動、拖四個角調整大小、雙指 / Ctrl＋滾輪縮放
 - **便利貼、圖片、貼圖**：圖片會自動壓縮後存進 Firestore（不需要 Firebase 付費方案）
+- **附件（PDF、Word、Excel、PowerPoint）**：便利貼 / 公告可以附最多 5 個檔案，每個最多 10MB
+  - PDF 點一下直接在 App 裡看（上下捲動、兩指或點兩下放大），其他檔案下載下來（手機 App 是「用其他 App 開啟」）
+  - 檔案切成每片 900KB 存在 Firestore（`groups/{邀請碼}/files/{檔案 id}/chunks/{0、1…}`），一樣不需要付費方案；點開時才下載，刪掉項目會一起清掉
+  - PDF 檢視器用 PDF.js（從 jsDelivr CDN 載入，所以看 PDF 要有網路）
 - **重要公告**：分「重要」「緊急」，每個人都要按「我知道了」；發文的人看得到誰還沒看
 - **日期時間**：公告可以設活動時間，白板、小工具都會倒數，並在前一天、前一小時、準時發通知
 - **桌面小工具**
@@ -298,10 +302,11 @@ src/features/board/       白板：Canvas（平移縮放）、CanvasItem（拖�
 src/features/setup/       加入公布欄：第一次使用（LINE / Google 登入或取暱稱、建立 / 加入群組）、邀請連結、切換 / 新增公布欄
 src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步、收到推播時背景更新
 src/features/alerts/      快速通報：通報面板、App 裡的通報卡片、推播（送出、註冊推播代碼、點通知打開公布欄）
+src/features/files/       附件：編輯時挑檔、附件清單、上傳下載、PDF 檢視器（pdf-viewer-html.ts，網頁版放 iframe、手機放 WebView）
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
 src/features/settings/    設定（右上角齒輪）、裝到手機：安裝提醒、依裝置教怎麼安裝（PWA / Android App）、在 LINE 裡改用 App 打開
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
-src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）、加入公布欄（join.ts）
+src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）、加入公布欄（join.ts）、挑檔（documents.ts）、檔案快取與開檔（files.ts / files.native.ts）
 api/line-login.ts         Vercel Function：驗證 LINE 登入，發 Firebase 登入憑證
 api/join.ts               Vercel Function：LINE 群組成員點邀請連結時，確認後直接加入（免審核）
 api/line-webhook.ts       Vercel Function：LINE 官方帳號的 Webhook，房主貼邀請連結時綁定群組

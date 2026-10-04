@@ -60,7 +60,7 @@ export async function sendQuickAlert(gid: string, boardName: string, alert: NewA
 }
 
 /** 小工具上看得到的欄位 */
-export type WidgetFields = Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'priority' | 'dueAt'>;
+export type WidgetFields = Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files' | 'priority' | 'dueAt'>;
 
 const onWidget = (i: WidgetFields | null): i is WidgetFields => i !== null && (i.priority !== 'none' || i.dueAt !== null);
 const sameOnWidget = (a: WidgetFields, b: WidgetFields) =>

@@ -29,6 +29,11 @@ service cloud.firestore {
         && (!('carousel' in d) || d.carousel is bool);
     }
 
+    // 附件可以沒有（舊資料），有的話最多 5 個；檔案內容另外存在 files/{檔案 id}/chunks
+    function validFiles(d) {
+      return !('files' in d) || (d.files is list && d.files.size() <= 5);
+    }
+
     // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE / Google 的大頭貼網址（會顯示在每個人的畫面上）
     function validAvatar(d) {
       return !('avatarUrl' in d)
@@ -42,6 +47,14 @@ service cloud.firestore {
         && validAvatar(d)
         && (!('pushToken' in d) || (d.pushToken is string && d.pushToken.size() <= 200))
         && (!('pushOS' in d) || d.pushOS in ['ios', 'android']);
+    }
+
+    // 附件的一片：第 0–11 片，內容是 Bytes
+    function validChunk(index, d) {
+      return index.matches('([0-9]|1[01])')
+        && d.keys().hasOnly(['data', 'uploaderId'])
+        && d.uploaderId == request.auth.uid
+        && d.data is bytes && d.data.size() <= 921600;
     }
 
     // LINE 帳號 → 成員 uid 的對照表：只有伺服器（/api/line-login，用管理者權限）能讀寫
@@ -119,6 +132,17 @@ service cloud.firestore {
           && request.resource.data.ackBy.diff(resource.data.ackBy).affectedKeys().hasOnly([request.auth.uid]);
       }
 
+      // 附件內容：一個檔案切成好幾片（每片最多 900KB、最多 12 片 ≈ 10MB），成員才讀得到。
+      // 只能用自己的名義上傳；上傳的人（就是項目作者）可以重傳、刪掉。缺片（沒傳完）也能刪，清得乾淨
+      match /files/{fileId}/chunks/{index} {
+        allow read: if signedIn() && isMember(gid);
+
+        allow create: if signedIn() && isMember(gid) && validChunk(index, request.resource.data);
+        allow update: if signedIn() && isMember(gid) && resource.data.uploaderId == request.auth.uid
+          && validChunk(index, request.resource.data);
+        allow delete: if signedIn() && (resource == null || resource.data.uploaderId == request.auth.uid);
+      }
+
       match /items/{itemId} {
         allow read: if signedIn() && isMember(gid);
 
@@ -128,12 +152,14 @@ service cloud.firestore {
           && request.resource.data.priority in ['none', 'important', 'urgent']
           && request.resource.data.ackBy == {}
           && validOrganize(request.resource.data)
-          && validPhotos(request.resource.data);
+          && validPhotos(request.resource.data)
+          && validFiles(request.resource.data);
 
         // 作者：可以改內容、刪除
         allow update: if signedIn() && resource.data.authorId == request.auth.uid
           && validOrganize(request.resource.data)
-          && validPhotos(request.resource.data);
+          && validPhotos(request.resource.data)
+          && validFiles(request.resource.data);
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
 
         // 其他成員：可以移動 / 調整大小 / 調整圖層（像 Figma 共同編輯），也可以改狀態、標籤

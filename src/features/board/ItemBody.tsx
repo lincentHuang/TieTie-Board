@@ -4,8 +4,9 @@ import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, type SharedValue } from 'react-native-reanimated';
 
 import { C, F, Ionicons } from '@/components/ui';
+import { fileKind } from '@/features/files/file-kinds';
 import { countdownLabel, whenLabel } from '@/lib/dates';
-import { PRIORITY_META, STATUS_META, isAnnouncement, tagColor, type BoardItem } from '@/lib/types';
+import { PRIORITY_META, STATUS_META, isAnnouncement, tagColor, type Attachment, type BoardItem } from '@/lib/types';
 
 const TAPES = ['#FF9BB8', '#8FD9C4', '#FFD66B', '#A9C8FF', '#C9B4FF'];
 /** 輪播時每張照片停留多久 */
@@ -137,7 +138,7 @@ export function ItemBody({
         {header}
         {/* 文字高度不能被卡片限制：iOS 放不下時會把最後一行從字中間切掉，而不是整個字換到下一行。
             所以文字用絕對定位照自己的高度排版，多出來的由外框裁掉 */}
-        {item.text || !item.photos.length ? (
+        {item.text || (!item.photos.length && !item.files.length) ? (
           <View style={s.noteBody}>
             <Text style={[s.noteText, { fontSize: item.fontSize, lineHeight: item.fontSize * 1.35 }, done && s.doneText]}>
               {item.text}
@@ -145,6 +146,7 @@ export function ItemBody({
           </View>
         ) : null}
         {item.photos.length ? <CardPhotos photos={item.photos} carousel={item.carousel} /> : null}
+        {item.files.length ? <CardFiles files={item.files} big={!item.text && !item.photos.length} /> : null}
         {tags}
         {footer}
       </View>
@@ -194,6 +196,42 @@ function CardPhotos({ photos, carousel }: { photos: string[]; carousel: boolean 
           <Text style={s.moreText}>{count}</Text>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** 便利貼上的附件：平常是一排小標籤；只放了檔案（沒有文字、照片）時，整張卡片就是那個檔案。
+    跟照片一樣不收手指，點兩下卡片才打開 */
+function CardFiles({ files, big }: { files: Attachment[]; big: boolean }) {
+  if (big) {
+    const kind = fileKind(files[0]);
+    return (
+      <View pointerEvents="none" style={s.fileBig}>
+        <View style={[s.fileBigIcon, { backgroundColor: kind.color + '1F' }]}>
+          <Ionicons name={kind.icon} size={32} color={kind.color} />
+          <Text style={[s.fileBigKind, { color: kind.color }]}>{kind.label}</Text>
+        </View>
+        <Text style={s.fileBigName} numberOfLines={2}>
+          {files[0].name}
+        </Text>
+        {files.length > 1 ? <Text style={s.fileMore}>還有 {files.length - 1} 個檔案</Text> : null}
+      </View>
+    );
+  }
+  return (
+    <View pointerEvents="none" style={s.fileRow}>
+      {files.slice(0, 2).map((f) => {
+        const kind = fileKind(f);
+        return (
+          <View key={f.id} style={[s.fileChip, { borderColor: kind.color + '55' }]}>
+            <Ionicons name={kind.icon} size={13} color={kind.color} />
+            <Text style={s.fileChipText} numberOfLines={1}>
+              {f.name}
+            </Text>
+          </View>
+        );
+      })}
+      {files.length > 2 ? <Text style={s.fileMore}>+{files.length - 2}</Text> : null}
     </View>
   );
 }
@@ -279,6 +317,24 @@ const s = StyleSheet.create({
   pendingText: { fontSize: 12, color: '#FFF', fontFamily: F.display },
   tags: { flexDirection: 'row', gap: 4, paddingHorizontal: 10, paddingBottom: 8, overflow: 'hidden' },
   tagsPhoto: { paddingHorizontal: 2, paddingTop: 6, paddingBottom: 0 },
+  fileRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingBottom: 8, overflow: 'hidden' },
+  fileChip: {
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    backgroundColor: '#FFFFFFCC',
+  },
+  fileChipText: { flexShrink: 1, fontSize: 12, fontFamily: F.display, color: C.ink },
+  fileMore: { fontSize: 12, fontFamily: F.display, color: C.sub },
+  fileBig: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, overflow: 'hidden' },
+  fileBigIcon: { width: 64, height: 64, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  fileBigKind: { fontSize: 11, fontFamily: F.display, marginTop: -2 },
+  fileBigName: { fontSize: 15, fontFamily: F.display, color: C.ink, textAlign: 'center' },
   pill: { flexShrink: 0, borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2 },
   pillText: { fontSize: 12, fontFamily: F.display },
   doneText: { opacity: 0.5 },

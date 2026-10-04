@@ -2,6 +2,7 @@ import { getRandomBytes } from 'expo-crypto';
 import {
   arrayRemove,
   arrayUnion,
+  Bytes,
   collection,
   deleteDoc,
   deleteField,
@@ -28,9 +29,12 @@ import {
 import { db } from './firebase';
 import {
   ALERT_LEVELS,
+  chunkCount,
+  FILE_CHUNK_BYTES,
   ITEM_TYPES,
   PRIORITIES,
   STATUSES,
+  type Attachment,
   type BoardDigest,
   type BoardItem,
   type BoardState,
@@ -51,6 +55,8 @@ import {
  *   groups/{邀請碼}/lineGroups/{LINE 群組 ID}  boundAt, boundBy（綁定的 LINE 群組，只有伺服器能讀寫）
  *   groups/{邀請碼}/items/{id}      BoardItem（白板上的便利貼 / 圖片 / 貼圖 / 公告）
  *   groups/{邀請碼}/alerts/{id}     QuickAlert（快速通報）
+ *   groups/{邀請碼}/files/{檔案 id}/chunks/{0、1、2…}  data（Bytes）, uploaderId（附件內容，切成好幾片，
+ *                                   每片一份文件；項目上的 files 只記檔名、大小，點開時才下載）
  *   lineAccounts/{LINE 使用者 ID}   uid（LINE 帳號對應的成員身分，只有伺服器 /api/line-login 能讀寫）
  *   users/{uid}                     groupIds, pendingIds, updatedAt（帳號上記的公布欄清單，換裝置登入同一個帳號也找得回來；
  *                                   只是索引，讀不讀得到公布欄還是看 members）
@@ -63,6 +69,8 @@ const membersRef = (gid: string) => collection(db, 'groups', gid, 'members');
 const alertsRef = (gid: string) => collection(db, 'groups', gid, 'alerts');
 const joinRequestsRef = (gid: string) => collection(db, 'groups', gid, 'joinRequests');
 const accountRef = (uid: string) => doc(db, 'users', uid);
+const chunkRef = (gid: string, fileId: string, index: number) =>
+  doc(db, 'groups', gid, 'files', fileId, 'chunks', String(index));
 
 export const normalizeCode = (input: string) => input.trim().toUpperCase();
 
@@ -125,6 +133,13 @@ const optStr = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T => list.find((x) => x === v) ?? fallback;
 const strList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const toAttachments = (v: unknown): Attachment[] =>
+  (Array.isArray(v) ? v : []).flatMap((f) =>
+    isRecord(f) && typeof f.id === 'string' && typeof f.name === 'string' && typeof f.size === 'number'
+      ? [{ id: f.id, name: f.name, size: f.size, mime: str(f.mime, 'application/octet-stream') }]
+      : [],
+  );
 
 const toGroup = (d: Record<string, unknown> | undefined): GroupInfo => ({
   name: str(d?.name, '公布欄'),
@@ -255,6 +270,7 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
     sticker: optStr(d.sticker),
     photos: strList(d.photos),
     carousel: d.carousel === true,
+    files: toAttachments(d.files),
     priority: oneOf(PRIORITIES, d.priority, 'none'),
     dueAt: millis(d.dueAt),
     status: oneOf(STATUSES, d.status, 'none'),
@@ -303,6 +319,54 @@ export const acknowledge = (gid: string, id: string, uid: string) =>
   updateDoc(doc(itemsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });
 
 export const deleteItem = (gid: string, id: string) => deleteDoc(doc(itemsRef(gid), id));
+
+/* ---------- 附件內容（切片存放，點開時才下載） ---------- */
+
+/** 上傳一個檔案的內容；onProgress 收到 0–1。同一個 id 重傳會覆蓋，存項目失敗後再按一次儲存也沒關係 */
+export async function uploadFile(
+  gid: string,
+  uid: string,
+  file: Attachment,
+  bytes: Uint8Array,
+  onProgress?: (ratio: number) => void,
+) {
+  const n = chunkCount(bytes.length);
+  // 一片一片傳：每片快 1MB，同時傳太多手機網路容易逾時
+  for (let i = 0; i < n; i++) {
+    const part = bytes.subarray(i * FILE_CHUNK_BYTES, (i + 1) * FILE_CHUNK_BYTES);
+    await setDoc(chunkRef(gid, file.id, i), { data: Bytes.fromUint8Array(part), uploaderId: uid });
+    onProgress?.((i + 1) / n);
+  }
+}
+
+/** 下載整個檔案；有缺片（還沒傳完、被刪掉）就丟出錯誤 */
+export async function fetchFile(gid: string, file: Attachment, onProgress?: (ratio: number) => void) {
+  const n = chunkCount(file.size);
+  let done = 0;
+  const parts = await Promise.all(
+    Array.from({ length: n }, async (_, i) => {
+      const data = (await getDoc(chunkRef(gid, file.id, i))).data()?.data;
+      if (!(data instanceof Bytes)) throw new Error('檔案不完整，可能還沒上傳完或已經刪掉了');
+      onProgress?.(++done / n);
+      return data.toUint8Array();
+    }),
+  );
+  const bytes = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0));
+  let offset = 0;
+  for (const p of parts) {
+    bytes.set(p, offset);
+    offset += p.length;
+  }
+  return bytes;
+}
+
+/** 刪掉檔案內容（項目刪除、附件拿掉時）。片數照檔案大小算，沒傳完的缺片也不會出錯 */
+export async function deleteFiles(gid: string, files: Attachment[]) {
+  if (!files.length) return;
+  const batch = writeBatch(db);
+  for (const f of files) for (let i = 0; i < chunkCount(f.size); i++) batch.delete(chunkRef(gid, f.id, i));
+  await batch.commit();
+}
 
 /* ---------- 快速通報 ---------- */
 

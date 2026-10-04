@@ -27,6 +27,8 @@ export interface BoardItem {
   photos: string[];
   /** 白板上輪流播放所有照片；關掉時只放封面 */
   carousel: boolean;
+  /** 附件（PDF、Word…），最多 MAX_FILES 個；檔案內容另外存，點開時才下載 */
+  files: Attachment[];
   /** 貼圖：emoji */
   sticker?: string;
 
@@ -43,6 +45,39 @@ export interface BoardItem {
   /** uid → 確認時間 */
   ackBy: Record<string, unknown>;
 }
+
+/** 便利貼 / 公告附的檔案。內容切成好幾片另外存（見 repo 的 uploadFile），項目上只記這些 */
+export interface Attachment {
+  /** 隨機產生，也是檔案內容存放的位置 */
+  id: string;
+  /** 原始檔名（含副檔名） */
+  name: string;
+  /** 位元組 */
+  size: number;
+  mime: string;
+}
+
+/** 一個項目最多附幾個檔案 */
+export const MAX_FILES = 5;
+/** 單一檔案上限。檔案切片存在 Firestore（免費方案共 1GB），太大的請改傳雲端硬碟連結 */
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** 每一片的大小：Firestore 單一文件上限 1MB，留一點空間給其他欄位（Firestore 規則也會擋） */
+export const FILE_CHUNK_BYTES = 900 * 1024;
+
+export const chunkCount = (size: number) => Math.max(1, Math.ceil(size / FILE_CHUNK_BYTES));
+
+export const isPdf = (file: Pick<Attachment, 'name' | 'mime'>) =>
+  file.mime === 'application/pdf' || /\.pdf$/i.test(file.name);
+
+/** 1.2 MB、10 MB、350 KB */
+export const fileSizeLabel = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/** 檔案一樣就好、順序不管 */
+export const sameFileSet = (a: Attachment[], b: Attachment[]) =>
+  a.length === b.length && a.every((f) => b.some((g) => g.id === f.id));
 
 /** 白板上的位置與大小 */
 export type Geometry = Pick<BoardItem, 'x' | 'y' | 'w' | 'h'>;
@@ -173,11 +208,11 @@ export const isAnnouncement = (item: BoardItem) => item.priority !== 'none';
 export const isAckedBy = (item: BoardItem, uid: string) =>
   !isAnnouncement(item) || item.authorId === uid || uid in item.ackBy;
 
-/** 取得公告的標題：第一行文字 */
-export const itemTitle = (item: Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos'>) => {
+/** 取得公告的標題：第一行文字；只放了檔案就用檔名 */
+export const itemTitle = (item: Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files'>) => {
   if (item.type === 'image') return item.text.split('\n')[0] || '圖片';
   if (item.type === 'sticker') return item.sticker ?? '貼圖';
-  return item.text.split('\n')[0] || (item.photos.length ? '照片' : '（沒有文字）');
+  return item.text.split('\n')[0] || (item.photos.length ? '照片' : item.files[0]?.name ?? '（沒有文字）');
 };
 
 /** 點開來可以放大看的照片：拍立得是那一張，便利貼是附的照片 */

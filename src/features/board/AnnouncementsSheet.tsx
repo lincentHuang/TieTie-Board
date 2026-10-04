@@ -3,12 +3,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Ionicons, Label } from '@/components/ui';
+import { FileRow } from '@/features/files/FileRow';
 import { countdownLabel, timeAgo, whenLabel } from '@/lib/dates';
 import { PRIORITY_META, isAckedBy, isAnnouncement, itemTitle, type BoardItem, type Member } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
 
 /** 所有「要注意的事」：等我確認的公告、接下來的行程、我發的公告誰還沒看 */
 export function AnnouncementsSheet({
+  gid,
   items,
   members,
   uid,
@@ -16,6 +18,7 @@ export function AnnouncementsSheet({
   onLocate,
   onClose,
 }: {
+  gid: string;
   items: BoardItem[];
   members: Member[];
   uid: string;
@@ -53,6 +56,14 @@ export function AnnouncementsSheet({
               <Text style={s.when}>
                 📅 {whenLabel(i.dueAt, now)}（{countdownLabel(i.dueAt, now)}）
               </Text>
+            ) : null}
+            {/* 公告附的檔案（例如學校通知單），看完再按我知道了 */}
+            {i.files.length ? (
+              <View style={s.files}>
+                {i.files.map((f) => (
+                  <FileRow key={f.id} gid={gid} file={f} />
+                ))}
+              </View>
             ) : null}
             <View style={s.actions}>
               <Button kind="ghost" color={C.sub} icon="locate" label="在白板上看" onPress={() => onLocate(i)} />
@@ -133,6 +144,7 @@ const s = StyleSheet.create({
   chipText: { fontFamily: F.display, fontSize: 13, color: '#FFF' },
   title: { fontSize: 21, lineHeight: 29, fontFamily: F.display, color: C.ink },
   when: { fontSize: 15, color: C.ink, fontFamily: F.display },
+  files: { gap: 6, marginTop: 4 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
   row: {
     flexDirection: 'row',

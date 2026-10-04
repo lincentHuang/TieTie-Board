@@ -22,10 +22,11 @@ src/
     setup/        加入公布欄：第一次使用（登入或取暱稱、建立 / 加入群組）、邀請連結、切換 / 新增公布欄
     widgets/      桌面小工具：iOS（BoardWidget）、Android（android/）、資料轉換與同步、收到推播時背景更新
     alerts/       快速通報與推播：通報面板、通報卡片、送推播、註冊推播代碼
+    files/        附件（PDF、Word…）：挑檔、上傳下載、PDF 檢視器（PDF.js，網頁版 iframe / 手機 WebView）
     pet/          公告小幫手（寵物）——元件已完成，尚未接到畫面上
     settings/     設定（右上角齒輪）、裝到手機：安裝提醒、PWA / Android App 安裝說明（網頁版才有）
   components/     共用 UI：ui.tsx（C、F、Button…）、Sheet、MemberAvatar、dialogs
-  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知、登入（sign-in、LINE：line、liff）
+  lib/            共用基礎：firebase、repo（資料存取）、types、session、dates、errors、提醒通知、登入（sign-in、LINE：line、liff）、檔案（documents 挑檔、files 快取與開檔）
 api/              Vercel Function（伺服器端，用 firebase-admin 的 app / firestore；不要用 firebase-admin/auth，它在 Vercel 上一載入就當掉；不能被 src/ import；每支函式自己帶需要的小工具，不互相 import）
 ```
 

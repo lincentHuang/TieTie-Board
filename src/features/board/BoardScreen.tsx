@@ -9,6 +9,8 @@ import { AlertOverlay } from '@/features/alerts/AlertOverlay';
 import { notifyBoardChange } from '@/features/alerts/notify';
 import { QuickAlertSheet } from '@/features/alerts/QuickAlertSheet';
 import { usePushRegistration } from '@/features/alerts/usePushRegistration';
+import { FilesSheet } from '@/features/files/FilesSheet';
+import { discardFiles, uploadFiles } from '@/features/files/transfer';
 import { InstallBanner } from '@/features/settings/InstallBanner';
 import { SettingsSheet } from '@/features/settings/SettingsSheet';
 import { AccountCard } from '@/features/setup/AccountCard';
@@ -25,6 +27,7 @@ import {
   isAnnouncement,
   itemTitle,
   NOTE_COLORS,
+  sameFileSet,
   samePhotoSet,
   tagsInUse,
   viewablePhotos,
@@ -51,6 +54,9 @@ type Panel = 'none' | 'stickers' | 'announcements' | 'invite' | 'boards' | 'aler
 const TOOLBAR_HEIGHT = 76;
 /** 便利貼有照片時多長高一點，文字才不會被照片擠扁 */
 const PHOTO_ROOM = 130;
+/** 有附件時多留一排放檔名 */
+const FILE_ROOM = 40;
+const extraRoom = (d: Pick<Draft, 'photos' | 'files'>) => (d.photos.length ? PHOTO_ROOM : 0) + (d.files.length ? FILE_ROOM : 0);
 
 export function BoardScreen({
   quickAlert = false,
@@ -82,6 +88,7 @@ export function BoardScreen({
   const [panel, setPanel] = useState<Panel>('none');
   const [organizingId, setOrganizingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [filesId, setFilesId] = useState<string | null>(null);
   const { prefs, setQueued, setGroup } = useViewPrefs();
 
   if (!items || !prefs) {
@@ -98,6 +105,7 @@ export function BoardScreen({
   const organizing = items.find((i) => i.id === organizingId) ?? null;
   const viewing = items.find((i) => i.id === viewingId);
   const viewingPhotos = viewing ? viewablePhotos(viewing) : [];
+  const filesOf = items.find((i) => i.id === filesId);
   const allTags = tagsInUse(items).map((t) => t.tag);
   const maxZ = items.reduce((m, i) => Math.max(m, i.z), 0);
   const pending = items.filter((i) => isAnnouncement(i) && !isAckedBy(i, uid)).sort(byUrgency(uid));
@@ -147,6 +155,7 @@ export function BoardScreen({
         dueAt: null,
         photos: [],
         carousel: false,
+        files: [],
         status: 'none',
         tags: [],
       },
@@ -171,6 +180,7 @@ export function BoardScreen({
           imageData: img.dataUrl,
           photos: [],
           carousel: false,
+          files: [],
           status: 'none',
           tags: [],
         },
@@ -193,6 +203,7 @@ export function BoardScreen({
         dueAt: null,
         photos: [],
         carousel: false,
+        files: [],
         status: 'none',
         tags: [],
         ...placeNew(120, 120),
@@ -209,16 +220,41 @@ export function BoardScreen({
     const item = items.find((i) => i.id === id);
     if (!item || item.type === 'sticker') return;
     if (item.authorId !== uid) {
-      // 別人的東西不能改內容：有照片就全螢幕看照片，是公告就打開確認面板
-      if (viewablePhotos(item).length) setViewingId(id);
+      // 別人的東西不能改內容：有附件就打開附件，有照片就全螢幕看照片，是公告就打開確認面板
+      if (item.files.length) setFilesId(id);
+      else if (viewablePhotos(item).length) setViewingId(id);
       else if (isAnnouncement(item)) setPanel('announcements');
       return;
     }
-    const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, status, tags } = item;
+    const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, status, tags } = item;
     setEditing({
       id,
-      draft: { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, status, tags },
+      draft: { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, status, tags },
     });
+  };
+
+  /** 編輯視窗按下儲存（檔案已經傳好了） */
+  const saveDraft = async (target: Editing, draft: Draft) => {
+    if (target.id) {
+      // 公告的內容、照片、檔案、時間或重要程度改了 → 大家要重新確認（只換封面、開關輪播不算）
+      const old = target.draft;
+      const changed =
+        draft.text !== old.text ||
+        !samePhotoSet(draft.photos, old.photos) ||
+        !sameFileSet(draft.files, old.files) ||
+        draft.dueAt !== old.dueAt ||
+        draft.priority !== old.priority;
+      // 第一次加照片 / 檔案就把卡片拉長；全部拿掉就縮回來
+      const h = items.find((i) => i.id === target.id)?.h;
+      const grow = extraRoom(draft) - extraRoom(old);
+      const resize = h !== undefined && grow ? { h: Math.max(120, h + grow) } : null;
+      await editItem(gid, target.id, { ...draft, ...resize }, changed && draft.priority !== 'none');
+      discardFiles(gid, old.files.filter((f) => !draft.files.some((g) => g.id === f.id)));
+      notifyBoardChange(pushCtx, old, draft);
+    } else {
+      const size = target.size ?? { w: 220, h: 200 };
+      await create(draft, { w: size.w, h: size.h + extraRoom(draft) });
+    }
   };
 
   const commit = (id: string, geo: Geometry) => {
@@ -232,6 +268,7 @@ export function BoardScreen({
     if (!(await askConfirm('刪除這個項目？', itemTitle(item)))) return;
     try {
       await deleteItem(gid, item.id);
+      discardFiles(gid, item.files);
       notifyBoardChange(pushCtx, item, null);
       setSelectedId(null);
       setEditing(null);
@@ -370,6 +407,8 @@ export function BoardScreen({
               ) : null}
               {selected.authorId === uid && selected.type !== 'sticker' ? (
                 <Tool icon="create" label="編輯" color={C.sky} onPress={() => open(selected.id)} />
+              ) : selected.files.length ? (
+                <Tool icon="attach" label="檔案" color={C.lavender} onPress={() => setFilesId(selected.id)} />
               ) : null}
               <Tool icon="pricetags" label="整理" color={C.mint} onPress={() => setOrganizingId(selected.id)} />
               {queued ? null : (
@@ -393,33 +432,21 @@ export function BoardScreen({
 
       {editing ? (
         <ItemEditor
+          gid={gid}
           draft={editing.draft}
           isNew={editing.id === null}
           tagSuggestions={allTags}
           onClose={() => setEditing(null)}
           onDelete={editing.id ? () => remove(items.find((i) => i.id === editing.id)!) : undefined}
-          onSave={async (draft) => {
-            const hasPhotos = draft.photos.length > 0;
-            if (editing.id) {
-              // 公告的內容、照片、時間或重要程度改了 → 大家要重新確認（只換封面、開關輪播不算）
-              const old = editing.draft;
-              const changed =
-                draft.text !== old.text ||
-                !samePhotoSet(draft.photos, old.photos) ||
-                draft.dueAt !== old.dueAt ||
-                draft.priority !== old.priority;
-              // 第一次加照片就把卡片拉長；照片全部拿掉就縮回來
-              const h = items.find((i) => i.id === editing.id)?.h;
-              const hadPhotos = old.photos.length > 0;
-              const resize =
-                h !== undefined && hasPhotos !== hadPhotos
-                  ? { h: hasPhotos ? h + PHOTO_ROOM : Math.max(120, h - PHOTO_ROOM) }
-                  : null;
-              await editItem(gid, editing.id, { ...draft, ...resize }, changed && draft.priority !== 'none');
-              notifyBoardChange(pushCtx, old, draft);
-            } else {
-              const size = editing.size ?? { w: 220, h: 200 };
-              await create(draft, hasPhotos ? { w: size.w, h: size.h + PHOTO_ROOM } : size);
+          onSave={async (draft, uploads, onProgress) => {
+            // 新檔案先傳上去，項目上才記檔名；傳到一半失敗就整個不存，編輯畫面留著可以再按一次
+            await uploadFiles(gid, uid, uploads, onProgress);
+            try {
+              await saveDraft(editing, draft);
+            } catch (e) {
+              // 項目沒存成功：剛傳的檔案沒人用得到，先清掉（再按一次儲存會重傳）
+              discardFiles(gid, uploads.map((u) => u.file));
+              throw e;
             }
           }}
         />
@@ -435,9 +462,21 @@ export function BoardScreen({
       {viewing && viewingPhotos.length ? (
         <PhotoViewer photos={viewingPhotos} onClose={() => setViewingId(null)} />
       ) : null}
+      {filesOf ? (
+        <FilesSheet
+          gid={gid}
+          item={filesOf}
+          onViewPhotos={() => {
+            setFilesId(null);
+            setViewingId(filesOf.id);
+          }}
+          onClose={() => setFilesId(null)}
+        />
+      ) : null}
       {panel === 'stickers' ? <StickerPicker onPick={addSticker} onClose={() => setPanel('none')} /> : null}
       {panel === 'announcements' ? (
         <AnnouncementsSheet
+          gid={gid}
           items={items}
           members={members}
           uid={uid}

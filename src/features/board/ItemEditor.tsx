@@ -5,8 +5,11 @@ import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-nati
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Label, Segmented } from '@/components/ui';
+import { FilePicker } from '@/features/files/FilePicker';
+import type { PendingFiles } from '@/features/files/transfer';
 import { countdownLabel, whenLabel } from '@/lib/dates';
-import { MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
+import type { PickedFile } from '@/lib/documents';
+import { MAX_FILES, MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
@@ -15,7 +18,18 @@ import { PhotoViewer } from './PhotoViewer';
 
 export type Draft = Pick<
   BoardItem,
-  'type' | 'text' | 'color' | 'fontSize' | 'priority' | 'dueAt' | 'imageData' | 'photos' | 'carousel' | 'status' | 'tags'
+  | 'type'
+  | 'text'
+  | 'color'
+  | 'fontSize'
+  | 'priority'
+  | 'dueAt'
+  | 'imageData'
+  | 'photos'
+  | 'carousel'
+  | 'files'
+  | 'status'
+  | 'tags'
 >;
 
 const FONT_SIZES = [
@@ -34,6 +48,7 @@ const defaultDue = () => {
 };
 
 export function ItemEditor({
+  gid,
   draft: initial,
   isNew,
   tagSuggestions,
@@ -41,33 +56,44 @@ export function ItemEditor({
   onDelete,
   onClose,
 }: {
+  /** 打開已經上傳的附件來看要用 */
+  gid: string;
   draft: Draft;
   isNew: boolean;
   /** 白板上大家用過的標籤 */
   tagSuggestions: string[];
-  onSave: (draft: Draft) => Promise<void>;
+  /** uploads = 這次新加的檔案（要先上傳）；onProgress 收到上傳進度 0–1 */
+  onSave: (draft: Draft, uploads: PickedFile[], onProgress: (ratio: number) => void) => Promise<void>;
   onDelete?: () => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
+  /** 新挑的檔案內容，按儲存才上傳 */
+  const [pending, setPending] = useState<PendingFiles>({});
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
   const isImage = draft.type === 'image';
 
   const save = async () => {
-    // 便利貼至少要有文字或照片
-    if (!isImage && !draft.text.trim() && !draft.photos.length) return;
+    // 便利貼至少要有文字、照片或檔案
+    if (!isImage && !draft.text.trim() && !draft.photos.length && !draft.files.length) return;
+    const uploads = draft.files.flatMap((file) => (pending[file.id] ? [{ file, bytes: pending[file.id] }] : []));
     setBusy(true);
+    if (uploads.length) setProgress(0);
     try {
-      await onSave({ ...draft, text: draft.text.trim() });
+      await onSave({ ...draft, text: draft.text.trim() }, uploads, setProgress);
       onClose();
     } catch (e) {
-      // 失敗時留在編輯畫面，剛打的內容不會不見
+      // 失敗時留在編輯畫面，剛打的內容、挑的檔案都不會不見
       showError('儲存失敗', e);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
+
+  const saveLabel = isNew ? (draft.priority !== 'none' ? '發布，通知大家' : '貼到白板') : '儲存';
 
   const title = isNew ? (draft.priority !== 'none' ? '發布公告' : isImage ? '貼上圖片' : '新增便利貼') : '編輯';
 
@@ -82,10 +108,11 @@ export function ItemEditor({
           <Button
             style={{ flex: 1 }}
             big
-            label={isNew ? (draft.priority !== 'none' ? '發布，通知大家' : '貼到白板') : '儲存'}
+            label={progress !== null ? `上傳檔案中 ${Math.round(progress * 100)}%` : saveLabel}
             color={draft.priority !== 'none' ? PRIORITY_META[draft.priority].color : C.primary}
             onPress={save}
-            busy={busy}
+            busy={busy && progress === null}
+            disabled={busy}
           />
         </>
       }>
@@ -121,6 +148,17 @@ export function ItemEditor({
               </Text>
             </>
           ) : null}
+          <Label>檔案（選填，最多 {MAX_FILES} 個）</Label>
+          <FilePicker
+            gid={gid}
+            value={draft.files}
+            pending={pending}
+            onChange={(files, next) => {
+              set({ files });
+              setPending(next);
+            }}
+          />
+          {draft.files.length ? <Text style={s.hint}>PDF 大家點一下就能直接看，其他檔案會下載下來用 Word 等 App 打開。</Text> : null}
           <Label>便利貼顏色</Label>
           <View style={s.colors}>
             {NOTE_COLORS.map((c) => (
