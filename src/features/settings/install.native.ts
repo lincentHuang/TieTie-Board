@@ -15,3 +15,11 @@ export const promptInstall = async (): Promise<'accepted' | 'dismissed' | 'unava
 export const downloadApk = () => {};
 
 export const openInBrowser = () => {};
+
+export const canOpenInApp = (_env: InstallEnv | null) => false;
+
+export const handOffToApp = async (_code: string | null) => false;
+
+export const openInApp = async (_code: string | null) => {};
+
+export const homeScreenNote = (): string | null => null;

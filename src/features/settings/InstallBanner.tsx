@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { C, F, Ionicons, Squishy } from '@/components/ui';
 
-import { APK_URL } from './install';
+import { APK_URL, canOpenInApp } from './install';
 import { hideInstallHint, useInstall, useInstallHint } from './useInstall';
 
 /** 手機網頁版的安裝提醒（浮在工具列上面）：點了打開設定的「裝到手機」，按 ✕ 一週內不再出現 */
@@ -12,7 +12,9 @@ export function InstallBanner({ bottom, onOpen }: { bottom: number; onOpen: () =
   if (!env || !visible) return null;
 
   const sub = env.inLine
-    ? '先用手機的瀏覽器打開，就能安裝'
+    ? canOpenInApp(env)
+      ? '已經裝了 App？也可以直接用 App 打開'
+      : '先用手機的瀏覽器打開，就能安裝'
     : env.platform === 'android' && APK_URL
       ? '家人通報、新公告時手機會跳通知'
       : '加到主畫面，一點就打開';

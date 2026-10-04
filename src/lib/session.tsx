@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { AppState } from 'react-native';
 
-import { rememberBoard, withAccountBoards } from './account-boards';
+import { newAccountBoards, rememberBoard, withAccountBoards } from './account-boards';
 import { errorMessage } from './errors';
 import { currentAccount, ensureSignedIn, firebaseConfigured } from './firebase';
 import { forgetLineLogin, lineIdentity } from './liff';
@@ -162,6 +163,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       console.warn('儲存公布欄清單失敗', e),
     );
   }, [status, groupIds, groupId, pendingIds]);
+
+  // 從背景回來時，把帳號上新加入的公布欄補進來（例如剛在 LINE 裡加入，再切回 iPhone 主畫面上的公布欄）
+  useEffect(() => {
+    if (status !== 'ready') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      newAccountBoards(uid, { groupIds, pendingIds })
+        .then((added) => {
+          if (!added.groupIds.length && !added.pendingIds.length) return;
+          setGroupIds((ids) => [...ids, ...added.groupIds.filter((id) => !ids.includes(id))]);
+          setPendingIds((p) => [
+            ...p.filter((id) => !added.groupIds.includes(id)),
+            ...added.pendingIds.filter((id) => !p.includes(id)),
+          ]);
+          setGroupId((current) => current ?? added.groupIds[0] ?? null);
+        })
+        .catch((e) => console.warn('讀取帳號上的公布欄失敗', e));
+    });
+    return () => sub.remove();
+  }, [status, uid, groupIds, pendingIds]);
 
   const apply = (next: Started) => {
     setUid(next.uid);

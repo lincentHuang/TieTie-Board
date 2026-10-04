@@ -5,6 +5,9 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { useOpenFromNotification } from '@/features/alerts/useOpenFromNotification';
 import { BoardScreen } from '@/features/board/BoardScreen';
+import { AppHandoff } from '@/features/settings/AppHandoff';
+import { homeScreenNote } from '@/features/settings/install';
+import { useAppHandoff } from '@/features/settings/useAppHandoff';
 import { SetupScreen } from '@/features/setup/SetupScreen';
 import { useJoinFromLink } from '@/features/setup/useJoinFromLink';
 import { usePendingJoins } from '@/features/setup/usePendingJoins';
@@ -20,7 +23,9 @@ export default function Home() {
   const { board, alert } = params;
   const known = typeof board === 'string' && session.groupIds.includes(board);
   const joinCode = joinCodeFrom(params);
-  const joining = useJoinFromLink(joinCode);
+  // 在 LINE 裡（Android）選了以後直接用 App 打開：交給 App，這裡就不加入了
+  const handoff = useAppHandoff(joinCode);
+  const joining = useJoinFromLink(handoff.state === 'stay' ? joinCode : null, homeScreenNote());
   // 送出加入申請、等房主同意的公布欄：同意了就自動加入
   usePendingJoins();
   useOpenFromNotification();
@@ -39,7 +44,8 @@ export default function Home() {
     router.setParams({ board: undefined });
   }, [board, known, session]);
 
-  if (session.status === 'loading' || joining) {
+  if (handoff.state === 'opened') return <AppHandoff onStay={handoff.stay} onStopAuto={handoff.stopAuto} />;
+  if (session.status === 'loading' || joining || handoff.state === 'checking') {
     return (
       <View style={s.center}>
         <ActivityIndicator size="large" color={C.primary} />

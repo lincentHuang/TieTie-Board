@@ -55,3 +55,15 @@ export function openInExternalBrowser(url: string) {
   liff.openWindow({ url, external: true });
   return true;
 }
+
+/**
+ * 在 LINE 裡打開 App 登記過的網址：LINE 15.20 以後會直接切到那個 App，沒裝 App 就用手機的瀏覽器打開。
+ * 一打開公布欄就要用（LINE 登入還在進行），所以自己等 LIFF 準備好；不在 LINE 裡回傳 false
+ */
+export async function openAppLink(url: string) {
+  if (!canLoginWithLine) return false;
+  await init();
+  if (!liff.isInClient()) return false;
+  liff.openWindow({ url, external: true });
+  return true;
+}

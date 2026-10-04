@@ -65,6 +65,19 @@ export async function withAccountBoards(uid: string, local: Boards): Promise<Boa
   };
 }
 
+/**
+ * 帳號上有、這台裝置還沒有的公布欄（從背景回來時補上，例如剛在 LINE 裡加入，再從 iPhone 主畫面打開）。
+ * 只補不刪：離開、被拒絕這些由登入時的合併和 usePendingJoins 處理
+ */
+export async function newAccountBoards(uid: string, local: Boards): Promise<Boards> {
+  const remote = await fetchAccountBoards(uid);
+  const known = (gid: string) => local.groupIds.includes(gid);
+  return {
+    groupIds: remote.groupIds.filter((gid) => !known(gid)),
+    pendingIds: remote.pendingIds.filter((gid) => !known(gid) && !local.pendingIds.includes(gid)),
+  };
+}
+
 /** 加入、送出申請、離開、申請有結果時記到帳號上（在背景進行：沒網路時 Firestore 會等連上再送） */
 export const rememberBoard = (uid: string, gid: string, state: BoardState) => {
   recordBoard(uid, gid, state).catch((e) => console.warn('同步公布欄清單失敗', gid, e));

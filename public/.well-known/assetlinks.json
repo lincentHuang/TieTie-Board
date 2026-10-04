@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.huanglingcheng.tietieboard",
+      "sha256_cert_fingerprints": [
+        "D0:EF:BC:4E:75:67:61:E2:E5:E7:9C:D5:0E:E2:B9:3F:9F:29:6E:45:1F:23:1B:DC:5F:2F:B1:55:90:4B:10:49"
+      ]
+    }
+  }
+]

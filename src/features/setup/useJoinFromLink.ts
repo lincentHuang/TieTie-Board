@@ -10,9 +10,10 @@ import { useSession } from '@/lib/session';
  * - 已經加入過 → 切過去；已經送過申請 → 繼續等（例如剛在設定畫面按了「加入群組」）
  * - 已經有名字（用 LINE 登入，或之前取過暱稱）→ 加入：在房主綁定的 LINE 群組裡就直接加入，不然送出申請等房主同意
  * - 還沒有名字 → 不處理，交給設定畫面（邀請碼會先填好）
+ * note：加入或送出申請後多提醒的一句（例如 iPhone 主畫面上的公布欄也看得到）
  * 回傳 true = 正在加入，畫面先顯示載入中
  */
-export function useJoinFromLink(code: string | null) {
+export function useJoinFromLink(code: string | null, note: string | null = null) {
   const session = useSession();
   const started = useRef<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -46,11 +47,13 @@ export function useJoinFromLink(code: string | null) {
         if (result === 'missing') throw new Error('找不到這個公布欄，可能已經被刪掉了');
         if (result === 'joined') {
           await session.enterGroup(code, name);
+          if (note) showNotice('已加入公布欄', note);
           return;
         }
         await session.addPending(code, name);
-        // 還沒有任何公布欄時，設定畫面上就看得到「等房主同意」，不用再跳提示
-        if (session.groupId) showNotice('已送出加入申請', '房主同意後就會自動加入，可以在上方的公布欄清單看到');
+        // 還沒有任何公布欄時，設定畫面上就看得到「等房主同意」，沒有要多提醒的就不用再跳提示
+        const waiting = session.groupId ? '房主同意後就會自動加入，可以在上方的公布欄清單看到' : '房主同意後就會自動加入';
+        if (session.groupId || note) showNotice('已送出加入申請', note ? `${waiting}\n\n${note}` : waiting);
       } catch (e) {
         setFailed(code);
         showError('加入公布欄失敗', e);
@@ -58,7 +61,7 @@ export function useJoinFromLink(code: string | null) {
         done();
       }
     })();
-  }, [code, member, pending, name, ready, session]);
+  }, [code, member, pending, name, ready, session, note]);
 
   return ready && code !== null && code !== failed && !member && !pending && Boolean(name);
 }

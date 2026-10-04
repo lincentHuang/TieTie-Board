@@ -25,7 +25,8 @@
 - **設定**（右上角的齒輪）：裝到手機、我的帳號（LINE / Google 登入）、版本；之後新的設定也放這裡
 - **裝到手機**：用手機瀏覽器（或 LINE 裡）打開網頁版時，白板下方會提醒「把公布欄裝到手機」，按 ✕ 一週內不再出現，設定裡一直找得到（設定方式見下面「裝到手機」）
   - Android：下載 App（APK，收得到通知、有桌面小工具）或加到主畫面（PWA）
-  - iPhone / iPad：教你用分享按鈕「加入主畫面」
+  - Android 已經裝了 App：在 LINE 裡一鍵改用 App 打開，也可以設定「以後點 LINE 裡的連結，直接用 App 打開」
+  - iPhone / iPad：教你用分享按鈕「加入主畫面」；在 LINE 裡加入公布欄後會提醒「從主畫面打開也看得到」（iOS 不讓連結打開主畫面上的網頁）
   - 在 LINE 裡：LINE 裡不能安裝，先一鍵換成手機的瀏覽器打開
 - **公告小幫手（寵物系統）**
   - 捏寵物：狗狗、貓咪、兔兔、熊熊、倉鼠，7 種毛色、6 種配件，還能取名字
@@ -268,6 +269,27 @@ Android App（APK）的下載按鈕要設定下載網址才會出現，沒設定
 - 加到主畫面的網頁版跟一般網頁版一樣收不到推播，要收通知請裝 Android App
 - 在 LINE 裡按「用瀏覽器打開」：LIFF 裡用 `liff.openWindow({ external: true })`，一般 LINE 內建瀏覽器用網址參數 `openExternalBrowser=1`
 
+### 從 LINE 直接打開 Android App（App Links）
+
+`https://tietie-board.vercel.app/open?join=邀請碼` 登記成 Android App 的網址：
+
+- `app.json` 的 `android.intentFilters`（`autoVerify`，只認 `/open` 開頭，LINE 登入回來的網址不會被 App 搶走）
+- `public/.well-known/assetlinks.json`：Android 用它確認網站同意交給這個 App，裡面是 **EAS 簽 APK 用的憑證 SHA-256**。
+  換了簽章金鑰（例如重設 EAS 憑證）要一起改，查法：`npx eas-cli@latest credentials -p android`
+- App 收到這個網址時，`src/app/+native-intent.ts` 換成首頁 `/?join=邀請碼`；用瀏覽器打開時 `src/app/open.tsx` 轉回首頁
+
+在 LINE 裡（Android、有設定 APK 下載網址時），設定的「裝到手機」會多一個「已經裝了 App？用 App 打開」，用 `liff.openWindow({ external: true })` 打開上面的網址：
+LINE 15.20 以後有裝 App 就直接切過去，沒裝就用手機的瀏覽器打開。打開「以後點 LINE 裡的連結，直接用 App 打開」後（記在那支手機的 LINE 裡），
+點邀請連結一進來就交給 App，LINE 裡只留一個「在 LINE 裡繼續」的畫面，不會再用 LINE 身分加入一次。
+
+注意：
+- 改了 `intentFilters` 要重新建置 APK、發新的 Release；家人要更新 App 才會生效
+- 手機 App 目前是匿名登入，跟 LINE 帳號是不同的人：App 裡還沒加入的公布欄，交給 App 後會送出加入申請，等房主同意
+- 驗證網站設定：`https://tietie-board.vercel.app/.well-known/assetlinks.json` 要打得開；裝好 App 後可以用
+  `adb shell pm get-app-links com.huanglingcheng.tietieboard` 看 `tietie-board.vercel.app` 是不是 `verified`
+- iPhone 加到主畫面的網頁沒辦法從連結打開（iOS 的限制）。在 LINE 裡加入後會提醒從主畫面打開；
+  主畫面上的公布欄從背景切回來時，會把帳號上新加入的公布欄補進來（`session.tsx`），不用關掉重開
+
 ## 檔案結構
 
 ```
@@ -277,14 +299,14 @@ src/features/setup/       加入公布欄：第一次使用（LINE / Google 登�
 src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步、收到推播時背景更新
 src/features/alerts/      快速通報：通報面板、App 裡的通報卡片、推播（送出、註冊推播代碼、點通知打開公布欄）
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
-src/features/settings/    設定（右上角齒輪）、裝到手機：安裝提醒、依裝置教怎麼安裝（PWA / Android App）
+src/features/settings/    設定（右上角齒輪）、裝到手機：安裝提醒、依裝置教怎麼安裝（PWA / Android App）、在 LINE 裡改用 App 打開
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
 src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）、加入公布欄（join.ts）
 api/line-login.ts         Vercel Function：驗證 LINE 登入，發 Firebase 登入憑證
 api/join.ts               Vercel Function：LINE 群組成員點邀請連結時，確認後直接加入（免審核）
 api/line-webhook.ts       Vercel Function：LINE 官方帳號的 Webhook，房主貼邀請連結時綁定群組
 firestore.rules           資料庫權限規則
-public/                   網頁版的 HTML 範本、PWA 設定（manifest.json）與圖示
+public/                   網頁版的 HTML 範本、PWA 設定（manifest.json）與圖示、Android App Links 的 .well-known/assetlinks.json
 ```
 
 依賴方向只能 `app → features → components → lib`，由 `eslint.config.js` 檢查（`npm run lint`）。

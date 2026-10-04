@@ -1,10 +1,12 @@
-import type { ReactNode } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 
+import { showError } from '@/components/dialogs';
 import { Button, C, F, Ionicons, type IconName } from '@/components/ui';
 import { useSession } from '@/lib/session';
 
-import { APK_URL, downloadApk, openInBrowser } from './install';
+import { APK_URL, canOpenInApp, downloadApk, openInApp, openInBrowser } from './install';
+import { loadAutoOpen, saveAutoOpen } from './useAppHandoff';
 import { hideInstallHint, useInstall } from './useInstall';
 
 /** 設定裡的「裝到手機」：Android 可以下載 App 或加到主畫面，iPhone 加到主畫面，在 LINE 裡要先換瀏覽器 */
@@ -32,11 +34,24 @@ export function InstallCard() {
     ) : null;
 
   if (env.inLine) {
-    return (
-      <Option icon="open-outline" color={C.lineGreen} title="先用瀏覽器打開" desc="LINE 裡面沒辦法安裝。用手機的瀏覽器打開公布欄後，再到這裡安裝">
-        <Button color={C.lineGreen} icon="compass" label="用瀏覽器打開" onPress={openInBrowser} />
+    const app = canOpenInApp(env);
+    const browser = (
+      <Option
+        icon="open-outline"
+        color={C.lineGreen}
+        title={app ? '還沒裝？先用瀏覽器打開' : '先用瀏覽器打開'}
+        desc="LINE 裡面沒辦法安裝。用手機的瀏覽器打開公布欄後，再到這裡安裝">
+        <Button kind={app ? 'soft' : 'primary'} color={C.lineGreen} icon="compass" label="用瀏覽器打開" onPress={openInBrowser} />
         <Text style={s.note}>在瀏覽器裡按「用 LINE 登入」，就會回到你的公布欄</Text>
       </Option>
+    );
+    return app ? (
+      <View style={s.list}>
+        <OpenInAppOption code={session.groupId} />
+        {browser}
+      </View>
+    ) : (
+      browser
     );
   }
 
@@ -114,6 +129,30 @@ export function InstallCard() {
   );
 }
 
+/** 在 LINE 裡（Android）：已經裝了 App 就改用 App 打開這個公布欄，也可以設定以後點連結都直接用 App 打開 */
+function OpenInAppOption({ code }: { code: string | null }) {
+  const [auto, setAuto] = useState(false);
+  useEffect(() => {
+    loadAutoOpen().then(setAuto);
+  }, []);
+  const toggle = (on: boolean) => {
+    setAuto(on);
+    saveAutoOpen(on);
+  };
+  const open = () => openInApp(code).catch((e) => showError('打不開 App', e));
+
+  return (
+    <Option icon="phone-portrait-outline" color={C.ok} title="已經裝了 App？" desc="改用貼貼公布欄 App 打開，收得到通知、有桌面小工具">
+      <Button color={C.ok} icon="open-outline" label="用 App 打開" onPress={open} />
+      <View style={s.switchRow}>
+        <Text style={s.switchText}>以後點 LINE 裡的連結，直接用 App 打開</Text>
+        <Switch value={auto} onValueChange={toggle} />
+      </View>
+      <Text style={s.note}>App 裡還沒加入這個公布欄的話，會送出加入申請，等房主同意</Text>
+    </Option>
+  );
+}
+
 function Option({
   icon,
   color,
@@ -181,6 +220,8 @@ const s = StyleSheet.create({
   body: { marginTop: 12, gap: 8 },
   note: { fontSize: 12, color: C.sub, textAlign: 'center', lineHeight: 17 },
   warn: { color: C.important, fontFamily: F.display },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bg, borderRadius: 14, padding: 10 },
+  switchText: { flex: 1, fontFamily: F.display, fontSize: 14, color: C.ink, lineHeight: 20 },
   steps: { gap: 6 },
   step: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bg, borderRadius: 14, padding: 10 },
   stepNo: { width: 24, height: 24, borderRadius: 12, backgroundColor: C.sky, alignItems: 'center', justifyContent: 'center' },
