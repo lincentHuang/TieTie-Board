@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { Button, C, F } from '@/components/ui';
@@ -12,29 +12,39 @@ const VIA = { line: 'LINE', google: 'Google' };
 
 /**
  * 登入方式：LINE 為主（家庭群組點進來最順），Google 當備案（在電腦上看、沒有 LINE 的人）。
- * 已經登入就顯示目前的身分；兩種都不能用時（例如手機 App 版）什麼都不顯示。
+ * 已經登入就顯示目前的身分；兩種都不能用時（例如手機 App 版）只在有 anonymousNote 時顯示名字，不然什麼都不顯示。
  */
-export function AccountCard({ hint }: { hint?: string }) {
+export function AccountCard({
+  hint,
+  anonymousNote,
+  style,
+}: {
+  hint?: string;
+  /** 不能登入時，名字下面的說明（例如設定裡的「我的帳號」） */
+  anonymousNote?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
   const session = useSession();
   const [busy, setBusy] = useState<'line' | 'google' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  if (session.account !== 'anonymous' && session.nickname) {
+  const google = canLoginWithGoogle();
+  const canLogin = canLoginWithLine || google;
+  const note = session.account !== 'anonymous' ? `已用 ${VIA[session.account]} 登入，名字和頭像會跟著帳號` : canLogin ? null : anonymousNote;
+  if (note && session.nickname) {
     return (
-      <View style={s.me}>
+      <View style={[s.me, style]}>
         <MemberAvatar member={{ uid: session.uid, name: session.nickname, avatarUrl: session.avatarUrl }} size={44} />
         <View style={{ flex: 1 }}>
           <Text style={s.meName} numberOfLines={1}>
             {session.nickname}
           </Text>
-          <Text style={s.meHint}>已用 {VIA[session.account]} 登入，名字和頭像會跟著帳號</Text>
+          <Text style={s.meHint}>{note}</Text>
         </View>
       </View>
     );
   }
-
-  const google = canLoginWithGoogle();
-  if (!canLoginWithLine && !google) return null;
+  if (!canLogin) return null;
 
   // 要在 onPress 裡直接開始登入（中間不能先 await），Google 的彈出視窗才不會被瀏覽器擋下
   const run = (kind: 'line' | 'google', login: () => Promise<unknown>) => {
@@ -46,7 +56,7 @@ export function AccountCard({ hint }: { hint?: string }) {
   };
 
   return (
-    <View style={s.options}>
+    <View style={[s.options, style]}>
       {hint ? <Text style={s.hint}>{hint}</Text> : null}
       {canLoginWithLine ? (
         <Button

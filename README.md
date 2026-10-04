@@ -6,6 +6,7 @@
 
 - **多個公布欄**：同時加入家裡、社團好幾個公布欄，點左上角的名稱切換，或用邀請碼加入 / 建立新的
 - **LINE 一點就加入**：把邀請連結貼到 LINE 家庭群組，家人點開就在 LINE 裡打開公布欄，用自己的 LINE 名字和大頭貼直接加入（不用取暱稱、不用輸入邀請碼）
+- **加入審核**：群組裡有公布欄的 LINE 官方帳號時，**群組成員**點邀請連結直接加入；其他人（自己輸入邀請碼、連結被轉傳到別的地方）要等房主在「家人」面板按同意（設定方式見下面「加入審核」）
 - **Google 登入當備案**：在電腦上看、或沒有 LINE 的人用 Google 帳號登入，一樣帶入名字和大頭貼（設定方式見下面「登入方式」）
 - **自由白板**：像 Figma 一樣拖曳移動、拖四個角調整大小、雙指 / Ctrl＋滾輪縮放
 - **便利貼、圖片、貼圖**：圖片會自動壓縮後存進 Firestore（不需要 Firebase 付費方案）
@@ -21,6 +22,11 @@
   - App 裡會跳出卡片，按「收到 👍」；發通報的人看得到幾個人收到了
 - **新公告推播**：有人發「重要 / 緊急」公告時，其他人會收到通知
 - 公告的內容或時間被修改後，大家要重新確認
+- **設定**（右上角的齒輪）：裝到手機、我的帳號（LINE / Google 登入）、版本；之後新的設定也放這裡
+- **裝到手機**：用手機瀏覽器（或 LINE 裡）打開網頁版時，白板下方會提醒「把公布欄裝到手機」，按 ✕ 一週內不再出現，設定裡一直找得到（設定方式見下面「裝到手機」）
+  - Android：下載 App（APK，收得到通知、有桌面小工具）或加到主畫面（PWA）
+  - iPhone / iPad：教你用分享按鈕「加入主畫面」
+  - 在 LINE 裡：LINE 裡不能安裝，先一鍵換成手機的瀏覽器打開
 - **公告小幫手（寵物系統）**
   - 捏寵物：狗狗、貓咪、兔兔、熊熊、倉鼠，7 種毛色、6 種配件，還能取名字
   - 小幫手會用自己的口頭禪念出你還沒看的公告；點牠會跳起來冒愛心
@@ -38,7 +44,10 @@
 | 快速通報 | 所有成員都能發（只能用自己的名義、時間由伺服器決定、最多 40 字），只有發的人能刪 |
 | 推播代碼 | 每個人只能記自己的 |
 | 頭像 | 每個人只能改自己的，而且只能是 LINE / Google 大頭貼網址（`profile.line-scdn.net`、`lh3.googleusercontent.com`） |
-| LINE 帳號對照表（`lineAccounts`） | 只有伺服器（`/api/line-login`）能讀寫 |
+| 加入公布欄（新增成員） | 只有房主（建立的人）；LINE 群組成員由伺服器（`/api/join`）確認後加入 |
+| 加入申請（`joinRequests`） | 每個人只能用自己的名義送、可以收回；只有房主看得到全部、可以同意或拒絕 |
+| LINE 帳號對照表（`lineAccounts`）、綁定的 LINE 群組（`lineGroups`） | 只有伺服器能讀寫 |
+| 我的公布欄清單（`users/{uid}`） | 只有自己能讀寫；只是索引，讀不讀得到公布欄還是看是不是成員 |
 
 規則在 `firestore.rules`。
 
@@ -149,6 +158,7 @@ npx expo run:android   # 需要 Android Studio
 3. 網頁用 `signInWithCustomToken` 登入（`src/lib/sign-in.ts`）
    - 這台裝置原本是匿名成員：沿用同一個 uid，公布欄、便利貼、確認紀錄都留著
    - 同一個 LINE 帳號在別台裝置登入：換回同一個 uid（對照表在 Firestore 的 `lineAccounts/{LINE 使用者 ID}`）
+   - 加入過的公布欄也跟著帳號走：清單記在 Firestore 的 `users/{uid}`，登入時跟這台裝置記得的合併（`src/lib/account-boards.ts`）；改版前加入的，在原本那台裝置打開一次就會補記上去
 4. LINE 換了名字或大頭貼，下次打開會自動更新到每個加入的公布欄
 5. 在 LINE 裡打開時，「家人」面板多一個「傳到 LINE 聊天室」按鈕（LINE 的分享對象選擇器）
 
@@ -178,6 +188,49 @@ npx expo run:android   # 需要 Android Studio
 - 這台裝置的匿名成員搬到 LINE 身分時，用舊身分發的便利貼之後就不能再編輯（作者是舊的 uid）
 - 伺服器函式跑在東京（`vercel.json` 的 `regions`），離 LINE 和 Firestore（台灣）比較近
 
+### 加入審核（LINE 群組成員免審核）
+
+| 怎麼加入的 | 結果 |
+|---|---|
+| 用 LINE 登入、在房主綁定的 LINE 群組裡（從家庭群組點邀請連結） | 直接加入 |
+| 其他（自己輸入邀請碼、手機 App、Google / 匿名、連結被轉傳到別的群組） | 送出申請，房主在「家人」面板按「同意」後自動加入 |
+
+- 房主的家人按鈕上會顯示有幾個人在等；申請的人在「我的公布欄」看得到「等房主同意」，可以收回
+- 沒設定 LINE 官方帳號時，所有人都走申請
+
+為什麼要官方帳號：LIFF 從 2023 年起不再告訴網頁「是從哪個聊天室打開的」，沒辦法從連結本身知道是哪個群組。
+所以改成讓 LINE 官方帳號待在家庭群組裡，用它問 LINE「這個人在不在群組裡」——從群組點連結的家人一定在群組裡，連結被轉傳出去，那邊的人不在群組裡，就要等房主同意。
+
+運作方式：
+
+1. 房主把邀請連結貼到有官方帳號的 LINE 群組 → `api/line-webhook.ts` 收到訊息，確認貼的人就是房主（`lineAccounts` 對得上 `ownerId`），記下 `groups/{邀請碼}/lineGroups/{LINE 群組 ID}`，並在群組回一句「已綁定」
+   - 別人把連結轉貼到其他群組不算數；同一個公布欄可以綁好幾個群組
+2. 家人點連結 → 網頁用 LINE 登入後呼叫 `api/join.ts` → 它用官方帳號查「這個人在不在綁定的群組裡」（不用先加官方帳號好友），在就直接寫成員資料
+3. 不在 → App 寫一筆 `joinRequests/{uid}`，房主同意時同一次寫入加成員、刪申請（`src/lib/join.ts`）
+
+設定步驟（只要做一次）：
+
+1. **LINE Official Account Manager**（<https://manager.line.biz/>）建立一個官方帳號（免費方案就夠：回覆訊息、查群組成員都不算訊息則數），
+   再到「設定 → Messaging API」按「啟用」，Provider 選**跟 LINE Login 頻道同一個**
+   - 一定要同一個 Provider：LINE 使用者 ID 是每個 Provider 各自一套，不同 Provider 會對不上
+   - 啟用後到 **LINE Developers Console** 找到這個 Messaging API 頻道，「Messaging API」分頁：發一組 **Channel access token（long-lived）**；Webhook URL 填 `https://tietie-board.vercel.app/api/line-webhook`，打開 **Use webhook**，按 **Verify** 應該成功
+   - 同一頁的 LINE Official Account features：**允許加入群組**（Allow bot to join group chats）打開，**自動回應訊息**、**加入好友的歡迎訊息**關掉
+   - **Channel secret** 在「Basic settings」分頁
+2. **Vercel 專案** → Environment Variables（Production）新增（都勾 Sensitive）：
+
+   | 名稱 | 值 |
+   |---|---|
+   | `LINE_BOT_CHANNEL_SECRET` | Messaging API 頻道的 Channel secret（確認 Webhook 真的是 LINE 送來的） |
+   | `LINE_BOT_ACCESS_TOKEN` | Messaging API 頻道的 Channel access token |
+
+3. 上傳權限規則（`npm run deploy:rules`）**和**推到 `main` 要一起做：新規則不讓人自己把自己加成成員，舊版網頁 / App 會加入失敗
+4. 把官方帳號邀進家庭群組，房主（用 LINE 登入的那個帳號）在群組裡貼一次邀請連結（或用「傳到 LINE 聊天室」），官方帳號回「✅ 綁定」就完成
+
+注意：
+- 房主要用手機版 LINE 貼連結：電腦版 LINE 的訊息有時候沒有發訊人的 LINE 使用者 ID，沒辦法確認是不是房主
+- 匿名建立的公布欄，換成「別台裝置用過的 Google 帳號」時，房主身分不會跟著搬（換成 LINE 帳號會）；這時要用原本的身分處理申請
+- 手機 App 目前沒有 LINE 登入，從 App 加入一律走申請；App 要更新到這一版，舊版加入時會被新規則擋下
+
 ### Google 登入（備案）
 
 用 Firebase 內建的 Google 登入（免費方案就能用），不需要伺服器。
@@ -193,6 +246,28 @@ npx expo run:android   # 需要 Android Studio
 2. Authentication → 設定 → **授權網域**：加入 `tietie-board.vercel.app`（沒加會顯示「這個網址還沒加進 Firebase 的授權網域」）
 3. 如果 Google Cloud 的瀏覽器 API key 有設「網站限制（HTTP referrer）」，要加上 `tietie-board.firebaseapp.com/*`（登入視窗是從這個網域開的）
 
+## 裝到手機（PWA、Android App）
+
+網頁版本身就能「加到主畫面」（PWA），不用另外設定：
+
+- `public/manifest.json`：名稱、圖示、從主畫面打開時全螢幕；圖示在 `public/icons/`（從 `assets/images/icon.png` 縮出來的，換 App 圖示時一起換）
+- `public/index.html`：網頁的 HTML 範本（`output: "single"` 時 Expo 會用它），連上 manifest、iPhone 主畫面圖示，
+  並且一開始就接住 Chrome 的「可以安裝了」事件，使用者按「加到主畫面」時才跳出安裝視窗
+- 不用 service worker（Chrome 已經不要求），也就沒有快取舊版網頁的問題
+
+Android App（APK）的下載按鈕要設定下載網址才會出現，沒設定時 Android 只提供「加到主畫面」：
+
+1. 建置 APK：`npx eas-cli@latest build -p android --profile preview`（`eas.json` 的 preview 設 `"android": { "buildType": "apk" }`），
+   或本機 `cd android && ./gradlew assembleRelease`
+2. 把 APK 放到固定的網址，建議用 GitHub Release（repo 是公開的）：發一個 Release，附檔名稱叫 `tietie-board.apk`，
+   網址就固定是 `https://github.com/lincentHuang/TieTie-Board/releases/latest/download/tietie-board.apk`，之後發新版不用改設定
+3. **Vercel 專案** → Environment Variables（Production）新增 `EXPO_PUBLIC_ANDROID_APK_URL` = 上面的網址，再重新部署
+
+注意：
+- iPhone 沒有 App 可以下載（沒有上架），只能加到主畫面；加到主畫面後跟 Safari 是分開的，第一次要重新登入（用 LINE 登入就會回到原本的公布欄）
+- 加到主畫面的網頁版跟一般網頁版一樣收不到推播，要收通知請裝 Android App
+- 在 LINE 裡按「用瀏覽器打開」：LIFF 裡用 `liff.openWindow({ external: true })`，一般 LINE 內建瀏覽器用網址參數 `openExternalBrowser=1`
+
 ## 檔案結構
 
 ```
@@ -202,10 +277,14 @@ src/features/setup/       加入公布欄：第一次使用（LINE / Google 登�
 src/features/widgets/     桌面小工具：BoardWidget.tsx（iOS，JSX → SwiftUI）、android/（Android）、資料轉換與同步、收到推播時背景更新
 src/features/alerts/      快速通報：通報面板、App 裡的通報卡片、推播（送出、註冊推播代碼、點通知打開公布欄）
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
+src/features/settings/    設定（右上角齒輪）、裝到手機：安裝提醒、依裝置教怎麼安裝（PWA / Android App）
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
-src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）
+src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）、加入公布欄（join.ts）
 api/line-login.ts         Vercel Function：驗證 LINE 登入，發 Firebase 登入憑證
+api/join.ts               Vercel Function：LINE 群組成員點邀請連結時，確認後直接加入（免審核）
+api/line-webhook.ts       Vercel Function：LINE 官方帳號的 Webhook，房主貼邀請連結時綁定群組
 firestore.rules           資料庫權限規則
+public/                   網頁版的 HTML 範本、PWA 設定（manifest.json）與圖示
 ```
 
 依賴方向只能 `app → features → components → lib`，由 `eslint.config.js` 檢查（`npm run lint`）。

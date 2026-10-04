@@ -8,3 +8,6 @@ export function showError(title: string, e: unknown) {
   console.warn(title, e);
   window.alert(`${title}\n${errorMessage(e)}`);
 }
+
+/** 一般提示（不是錯誤），例如加入申請有結果了 */
+export const showNotice = (title: string, message: string) => window.alert(`${title}\n${message}`);

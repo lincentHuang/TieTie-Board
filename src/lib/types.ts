@@ -62,6 +62,35 @@ export interface Member extends MemberProfile {
   uid: string;
 }
 
+/** 公布欄本身：名稱與房主（建立的人，負責同意加入申請） */
+export interface GroupInfo {
+  name: string;
+  ownerId: string;
+}
+
+/** 等房主同意的加入申請（不是從綁定的 LINE 群組點連結進來的人） */
+export interface JoinRequest extends Member {
+  /** 毫秒；剛送出、伺服器時間還沒回來時是 null */
+  createdAt: number | null;
+}
+
+/** 我的公布欄（依加入順序） */
+export interface Boards {
+  /** 已經加入的 */
+  groupIds: string[];
+  /** 送出申請、等房主同意的 */
+  pendingIds: string[];
+}
+
+/** 自己在某個公布欄的狀態：joined = 成員；pending = 等房主同意；null = 都不是（離開了、被拒絕、收回申請） */
+export type BoardState = 'joined' | 'pending' | null;
+
+/**
+ * 我送出的加入申請現在怎樣了：
+ * pending = 還在等；approved = 房主同意了（已經是成員）；rejected = 房主拒絕了，或公布欄不見了
+ */
+export type JoinStatus = 'pending' | 'approved' | 'rejected';
+
 /** 快速通報：一按就讓全家的手機跳通知、桌面小工具變色提醒；urgent 會用更醒目的紅色 */
 export type AlertLevel = 'normal' | 'urgent';
 export const ALERT_LEVELS: AlertLevel[] = ['normal', 'urgent'];

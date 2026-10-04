@@ -11,6 +11,7 @@ import { CanvasItem } from './CanvasItem';
 import { QueueBar } from './QueueBar';
 import { filterChips, groupQueue, matchesFilter, type Filter, type QueueGroup } from './queue-filter';
 import { queueLayout } from './queue-layout';
+import { useBlockPullToClose } from './useBlockPullToClose';
 
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 4;
@@ -228,6 +229,9 @@ export function Canvas({
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   });
+
+  // 網頁：iPhone 的 LINE 瀏覽器往下拖會關掉頁面，在白板上拖曳時擋掉
+  useBlockPullToClose(containerRef);
 
   const pan = Gesture.Pan()
     .minDistance(8)

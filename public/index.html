@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>%WEB_TITLE%</title>
+    <!-- 可以安裝到主畫面（PWA）：Android 的 Chrome 看 manifest，iPhone 的 Safari 看 apple-touch-icon -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#FBF7FF" />
+    <meta name="apple-mobile-web-app-title" content="貼貼公布欄" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <script>
+      // Chrome「可以安裝了」的通知可能在 App 載入完之前就來，先接住，
+      // 等使用者按「安裝」再跳出來（src/features/settings/install.ts）
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__installPrompt = e;
+      });
+      window.addEventListener('appinstalled', function () {
+        window.__installPrompt = undefined;
+      });
+    </script>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>

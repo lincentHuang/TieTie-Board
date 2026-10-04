@@ -57,7 +57,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "emulators": "JAVA_HOME=\"${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}\" npx firebase-tools@latest emulators:start --only auth,firestore --project demo-bulletin",
-    "dev:web": "sh -c 'set -a; . ./.env.emulator; set +a; expo start --web --port 8081'",
+    "dev:web": "sh -c 'set -a; . ./.env.emulator; set +a; expo start --web --port ${PORT:-8081}'",
     "typecheck": "tsc --noEmit",
     "deploy:rules": "npx firebase-tools@latest deploy --only firestore:rules --project tietie-board"
   },

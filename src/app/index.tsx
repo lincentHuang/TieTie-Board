@@ -7,6 +7,7 @@ import { useOpenFromNotification } from '@/features/alerts/useOpenFromNotificati
 import { BoardScreen } from '@/features/board/BoardScreen';
 import { SetupScreen } from '@/features/setup/SetupScreen';
 import { useJoinFromLink } from '@/features/setup/useJoinFromLink';
+import { usePendingJoins } from '@/features/setup/usePendingJoins';
 import { C, F, Ionicons } from '@/components/ui';
 import { joinCodeFrom } from '@/lib/line';
 import { useSession } from '@/lib/session';
@@ -20,6 +21,8 @@ export default function Home() {
   const known = typeof board === 'string' && session.groupIds.includes(board);
   const joinCode = joinCodeFrom(params);
   const joining = useJoinFromLink(joinCode);
+  // 送出加入申請、等房主同意的公布欄：同意了就自動加入
+  usePendingJoins();
   useOpenFromNotification();
 
   useEffect(() => {

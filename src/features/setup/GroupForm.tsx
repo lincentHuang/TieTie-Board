@@ -4,8 +4,9 @@ import { StyleSheet, Text, TextInput } from 'react-native';
 import { Button, C, F, Label, Segmented } from '@/components/ui';
 import { canLoginWithGoogle } from '@/lib/firebase';
 import { errorMessage } from '@/lib/errors';
+import { joinBoard } from '@/lib/join';
 import { canLoginWithLine } from '@/lib/liff';
-import { createGroup, joinGroup, normalizeCode } from '@/lib/repo';
+import { createGroup, normalizeCode } from '@/lib/repo';
 import { useSession } from '@/lib/session';
 
 import { AccountCard } from './AccountCard';
@@ -34,6 +35,7 @@ export function GroupForm({
   const [groupName, setGroupName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const linked = session.account !== 'anonymous' && Boolean(session.nickname);
   const canSignIn = canLoginWithLine || canLoginWithGoogle();
@@ -43,6 +45,7 @@ export function GroupForm({
     const nick = (askNickname && !linked ? nickname : (session.nickname ?? '')).trim();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       if (!nick) throw new Error('先告訴我你的暱稱吧');
       const profile = { name: nick, avatarUrl: session.avatarUrl };
@@ -53,7 +56,16 @@ export function GroupForm({
       } else {
         const gid = normalizeCode(code);
         if (gid.length !== 6) throw new Error('邀請碼是 6 個字');
-        if (!(await joinGroup(gid, session.uid, profile))) throw new Error('找不到這個邀請碼，再確認一次看看');
+        const result = await joinBoard(gid, session.uid, profile);
+        if (result === 'missing') throw new Error('找不到這個邀請碼，再確認一次看看');
+        if (result === 'pending') {
+          // 不關面板：申請會出現在「等房主同意」的清單裡
+          await session.addPending(gid, nick);
+          setCode('');
+          setNotice('已送出加入申請，房主同意後就會自動加入');
+          setBusy(false);
+          return;
+        }
         await session.enterGroup(gid, nick);
       }
       onDone?.();
@@ -89,16 +101,21 @@ export function GroupForm({
         ]}
       />
       {mode === 'join' ? (
-        <TextInput
-          value={code}
-          onChangeText={(t) => setCode(t.toUpperCase())}
-          placeholder="6 碼邀請碼"
-          placeholderTextColor="#C9C2DD"
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={6}
-          style={[s.input, s.code]}
-        />
+        <>
+          <TextInput
+            value={code}
+            onChangeText={(t) => setCode(t.toUpperCase())}
+            placeholder="6 碼邀請碼"
+            placeholderTextColor="#C9C2DD"
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={6}
+            style={[s.input, s.code]}
+          />
+          <Text style={s.hint}>
+            {canLoginWithLine ? '房主同意後就會加入（從 LINE 群組點邀請連結的家人不用等）' : '送出後，房主同意就會加入'}
+          </Text>
+        </>
       ) : (
         <TextInput
           value={groupName}
@@ -110,6 +127,7 @@ export function GroupForm({
       )}
 
       {error ? <Text style={s.error}>{error}</Text> : null}
+      {notice ? <Text style={s.notice}>{notice}</Text> : null}
 
       <Button big style={{ marginTop: 24 }} label={mode === 'join' ? '加入群組' : '建立群組'} busy={busy} onPress={submit} />
     </>
@@ -129,5 +147,7 @@ const s = StyleSheet.create({
     color: C.ink,
   },
   code: { marginTop: 12, fontSize: 30, letterSpacing: 8, textAlign: 'center', height: 68 },
+  hint: { color: C.sub, marginTop: 8, fontSize: 13, textAlign: 'center' },
   error: { color: C.urgent, marginTop: 12, fontSize: 15, fontFamily: F.display },
+  notice: { color: C.ok, marginTop: 12, fontSize: 15, fontFamily: F.display },
 });

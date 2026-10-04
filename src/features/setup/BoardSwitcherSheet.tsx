@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
 import { C, F, Ionicons, Squishy } from '@/components/ui';
-import { watchGroupName } from '@/lib/repo';
 import { useSession } from '@/lib/session';
 import { colorOf } from '@/lib/types';
 
 import { AccountCard } from './AccountCard';
 import { GroupForm } from './GroupForm';
+import { PendingJoins } from './PendingJoins';
+import { useGroupNames } from './useGroupNames';
 
 /** 我加入的所有公布欄：點一下切換過去，下面可以再加入或建立一個 */
 export function BoardSwitcherSheet({ onClose }: { onClose: () => void }) {
@@ -57,22 +57,13 @@ export function BoardSwitcherSheet({ onClose }: { onClose: () => void }) {
           );
         })}
       </View>
+      <PendingJoins />
 
       <GroupForm title="新增公布欄" onDone={onClose} />
 
       <AccountCard hint="登入 LINE 或 Google，換手機、換電腦都還是同一個人" />
     </Sheet>
   );
-}
-
-/** 即時讀每個公布欄的名稱（只讀群組本身，不讀白板內容，資料量很小） */
-function useGroupNames(gids: string[]) {
-  const [names, setNames] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const unsubs = gids.map((gid) => watchGroupName(gid, (name) => setNames((n) => ({ ...n, [gid]: name }))));
-    return () => unsubs.forEach((u) => u());
-  }, [gids]);
-  return names;
 }
 
 const s = StyleSheet.create({

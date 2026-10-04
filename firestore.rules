@@ -9,6 +9,10 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid));
     }
 
+    function isOwner(gid) {
+      return get(/databases/$(database)/documents/groups/$(gid)).data.ownerId == request.auth.uid;
+    }
+
     function onlyChanges(keys) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
     }
@@ -32,9 +36,28 @@ service cloud.firestore {
           && d.avatarUrl.matches('https://(profile[.]line-scdn[.]net|lh3[.]googleusercontent[.]com)/[^ ]+'));
     }
 
+    // 成員資料：頭像、推播代碼（快速通報用）可以沒有，有的話格式要對
+    function validMember(d) {
+      return d.name is string
+        && validAvatar(d)
+        && (!('pushToken' in d) || (d.pushToken is string && d.pushToken.size() <= 200))
+        && (!('pushOS' in d) || d.pushOS in ['ios', 'android']);
+    }
+
     // LINE 帳號 → 成員 uid 的對照表：只有伺服器（/api/line-login，用管理者權限）能讀寫
     match /lineAccounts/{lineUserId} {
       allow read, write: if false;
+    }
+
+    // 帳號上記的公布欄清單（換手機、換電腦登入同一個帳號也找得回來）：只有自己能讀寫。
+    // 只是索引，寫了別人的邀請碼也讀不到那個公布欄（還是看 members）
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['groupIds', 'pendingIds', 'updatedAt'])
+        && request.resource.data.groupIds is list && request.resource.data.groupIds.size() <= 100
+        && request.resource.data.pendingIds is list && request.resource.data.pendingIds.size() <= 100
+        && request.resource.data.updatedAt == request.time;
     }
 
     match /groups/{gid} {
@@ -46,15 +69,32 @@ service cloud.firestore {
       allow update, delete: if signedIn() && resource.data.ownerId == request.auth.uid;
 
       match /members/{uid} {
-        allow read: if signedIn() && isMember(gid);
-        // 只能加入 / 改名 / 離開自己；頭像、推播代碼（快速通報用）可以沒有，有的話格式要對
-        allow create, update: if signedIn() && request.auth.uid == uid
-          && request.resource.data.name is string
-          && validAvatar(request.resource.data)
-          && (!('pushToken' in request.resource.data)
-            || (request.resource.data.pushToken is string && request.resource.data.pushToken.size() <= 200))
-          && (!('pushOS' in request.resource.data) || request.resource.data.pushOS in ['ios', 'android']);
+        // 自己的那份隨時讀得到：等房主同意時，靠它知道自己加入了沒
+        allow read: if signedIn() && (isMember(gid) || request.auth.uid == uid);
+        // 只有房主能把人加進來（建立群組時加自己、同意加入申請）；
+        // LINE 群組成員點邀請連結直接加入，是伺服器（/api/join）確認過後用管理者權限寫的
+        allow create: if signedIn() && isOwner(gid) && validMember(request.resource.data);
+        // 已經是成員：只能改自己的名字、頭像、推播代碼
+        allow update: if signedIn() && request.auth.uid == uid && validMember(request.resource.data);
         allow delete: if signedIn() && request.auth.uid == uid;
+      }
+
+      // 加入申請：不是從綁定的 LINE 群組點進來的人，要等房主同意。
+      // 申請的人只能用自己的名義送、可以收回；房主看得到全部、同意（建立成員資料）或拒絕（刪掉申請）
+      match /joinRequests/{uid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isOwner(gid));
+        allow create, update: if signedIn() && request.auth.uid == uid && !isMember(gid)
+          && request.resource.data.keys().hasOnly(['name', 'avatarUrl', 'createdAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 30
+          && validAvatar(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        allow delete: if signedIn() && (request.auth.uid == uid || isOwner(gid));
+      }
+
+      // 綁定的 LINE 群組（房主把邀請連結貼到有官方帳號的群組時，/api/line-webhook 記下來）：只有伺服器能讀寫
+      match /lineGroups/{lineGroupId} {
+        allow read, write: if false;
       }
 
       // 快速通報：成員都能發（只能用自己的名義、時間由伺服器決定），發的人可以收回

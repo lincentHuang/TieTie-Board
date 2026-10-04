@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
+import { rememberBoard, withAccountBoards } from './account-boards';
 import { errorMessage } from './errors';
 import { currentAccount, ensureSignedIn, firebaseConfigured } from './firebase';
 import { forgetLineLogin, lineIdentity } from './liff';
 import { signInWithGoogle, signInWithLine, syncProfile, toProfile, type SignedIn } from './sign-in';
+import type { Boards } from './types';
 
 /** 怎麼登入的：LINE / Google 的名字、頭像跟著帳號，不用自己取暱稱 */
 export type AccountKind = 'anonymous' | 'line' | 'google';
@@ -19,10 +21,19 @@ interface SessionState {
   account: AccountKind;
   /** 目前打開的公布欄 */
   groupId: string | null;
-  /** 這台裝置加入的所有公布欄（依加入順序） */
+  /** 加入的所有公布欄（依加入順序；登入時會跟帳號上的清單合併，別台裝置加入的也在） */
   groupIds: string[];
+  /** 送出加入申請、等房主同意的公布欄 */
+  pendingIds: string[];
   /** 加入或建立後進入；已經在清單裡的就只是切換過去 */
   enterGroup: (groupId: string, nickname: string) => Promise<void>;
+  /** 送出加入申請後記下來；房主同意後 usePendingJoins 會自動加入 */
+  addPending: (groupId: string, nickname: string) => Promise<void>;
+  /**
+   * 加入申請有結果了（或自己收回）：同意的加進清單（還沒打開任何公布欄就直接打開），其他的拿掉。
+   * 結果是從背景訂閱回來的（可能拿著舊的 session），所以只用函式型更新，同時好幾個也不會互相蓋掉
+   */
+  settlePending: (groupId: string, approved: boolean) => void;
   switchGroup: (groupId: string) => Promise<void>;
   /** 從清單拿掉目前的公布欄，換到下一個（都沒有了就回到第一次使用畫面） */
   leaveGroup: () => Promise<void>;
@@ -56,32 +67,44 @@ const saveGroups = (ids: string[], current: string | null) =>
     current ? AsyncStorage.setItem('groupId', current) : AsyncStorage.removeItem('groupId'),
   ]);
 
+const savePending = (ids: string[]) => AsyncStorage.setItem('pendingGroupIds', JSON.stringify(ids));
+
 const saveOptional = (key: string, value: string | null) =>
   value ? AsyncStorage.setItem(key, value) : AsyncStorage.removeItem(key);
 
-interface Saved {
+interface Saved extends Boards {
   nickname: string | null;
   avatarUrl: string | null;
   groupId: string | null;
-  groupIds: string[];
 }
 
 type Started = Saved & { uid: string; account: AccountKind };
 
-/** 登入完成：名字或頭像跟上次不一樣就更新到每個公布欄，再存起來 */
+/** 上次打開的還在就打開它，不然打開第一個 */
+const pickGroup = (last: string | null, groupIds: string[]) =>
+  last && groupIds.includes(last) ? last : (groupIds[0] ?? null);
+
+/**
+ * 登入完成：跟帳號上的公布欄清單合併（別台裝置加入的也看得到），
+ * 名字或頭像跟上次不一樣就更新到每個公布欄，再存起來
+ */
 async function settle(saved: Saved, next: SignedIn, account: AccountKind): Promise<Started> {
-  const { uid, profile, groupIds } = next;
-  const groupId = saved.groupId && groupIds.includes(saved.groupId) ? saved.groupId : (groupIds[0] ?? null);
+  const { uid, profile } = next;
+  const { groupIds, pendingIds } = await withAccountBoards(uid, next);
+  const groupId = pickGroup(saved.groupId, groupIds);
   if (profile.name !== saved.nickname || profile.avatarUrl !== saved.avatarUrl) {
     await syncProfile(uid, profile, groupIds);
   }
   await Promise.all([
     saveGroups(groupIds, groupId),
+    savePending(pendingIds),
     AsyncStorage.setItem('nickname', profile.name),
     saveOptional('avatarUrl', profile.avatarUrl),
   ]);
-  return { uid, account, nickname: profile.name, avatarUrl: profile.avatarUrl, groupId, groupIds };
+  return { uid, account, nickname: profile.name, avatarUrl: profile.avatarUrl, groupId, groupIds, pendingIds };
 }
+
+const boardsOf = ({ groupIds, pendingIds }: Boards): Boards => ({ groupIds, pendingIds });
 
 /**
  * 打開時登入：
@@ -92,7 +115,7 @@ async function settle(saved: Saved, next: SignedIn, account: AccountKind): Promi
 async function startSession(saved: Saved): Promise<Started> {
   const before = await currentAccount();
   if (before?.google && !before.lineSub) {
-    const next = { uid: before.uid, profile: toProfile(before.google, saved.nickname), groupIds: saved.groupIds };
+    const next = { uid: before.uid, profile: toProfile(before.google, saved.nickname), ...boardsOf(saved) };
     return settle(saved, next, 'google');
   }
   // LIFF 打不開（例如本機開發、LIFF ID 設錯）就當作沒有 LINE
@@ -102,7 +125,7 @@ async function startSession(saved: Saved): Promise<Started> {
   });
   if (line) {
     try {
-      return await settle(saved, await signInWithLine(line, saved.nickname, saved.groupIds), 'line');
+      return await settle(saved, await signInWithLine(line, saved.nickname, boardsOf(saved)), 'line');
     } catch (e) {
       console.warn('LINE 登入失敗，改用匿名登入', e);
       forgetLineLogin();
@@ -110,8 +133,15 @@ async function startSession(saved: Saved): Promise<Started> {
   }
   // 之前用 LINE 登入過、這次 LINE 沒登入（例如在一般瀏覽器）：Firebase 還記得，照樣是同一個人
   const account = await currentAccount();
-  if (account) return { ...saved, uid: account.uid, account: account.lineSub ? 'line' : 'anonymous' };
-  return { ...saved, uid: await ensureSignedIn(), account: 'anonymous' };
+  const uid = account?.uid ?? (await ensureSignedIn());
+  const boards = await withAccountBoards(uid, boardsOf(saved));
+  return {
+    ...saved,
+    ...boards,
+    groupId: pickGroup(saved.groupId, boards.groupIds),
+    uid,
+    account: account?.lineSub ? 'line' : 'anonymous',
+  };
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -123,6 +153,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<AccountKind>('anonymous');
   const [groupId, setGroupId] = useState<string | null>(null);
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
+
+  // 清單有變就存起來（加入申請的結果是從背景訂閱來的，用函式型更新，沒辦法在當下就知道新清單）
+  useEffect(() => {
+    if (status !== 'ready') return;
+    Promise.all([saveGroups(groupIds, groupId), savePending(pendingIds)]).catch((e) =>
+      console.warn('儲存公布欄清單失敗', e),
+    );
+  }, [status, groupIds, groupId, pendingIds]);
 
   const apply = (next: Started) => {
     setUid(next.uid);
@@ -131,19 +170,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAccount(next.account);
     setGroupId(next.groupId);
     setGroupIds(next.groupIds);
+    setPendingIds(next.pendingIds);
   };
 
   useEffect(() => {
     (async () => {
       try {
         if (!firebaseConfigured) throw new Error('尚未設定 Firebase（請參考 README 建立 .env）');
-        const [[, nick], [, gid], [, ids], [, avatar]] = await AsyncStorage.multiGet([
+        const [[, nick], [, gid], [, ids], [, avatar], [, pending]] = await AsyncStorage.multiGet([
           'nickname',
           'groupId',
           'groupIds',
           'avatarUrl',
+          'pendingGroupIds',
         ]);
-        apply(await startSession({ nickname: nick, avatarUrl: avatar, groupId: gid, groupIds: parseGroupIds(ids, gid) }));
+        const groupIds = parseGroupIds(ids, gid);
+        const pendingIds = parseGroupIds(pending, null).filter((id) => !groupIds.includes(id));
+        apply(await startSession({ nickname: nick, avatarUrl: avatar, groupId: gid, groupIds, pendingIds }));
         setStatus('ready');
       } catch (e) {
         setError(errorMessage(e));
@@ -161,12 +204,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     account,
     groupId,
     groupIds,
+    pendingIds,
     enterGroup: async (gid, nick) => {
       const ids = groupIds.includes(gid) ? groupIds : [...groupIds, gid];
       await Promise.all([saveGroups(ids, gid), AsyncStorage.setItem('nickname', nick)]);
+      rememberBoard(uid, gid, 'joined');
       setNickname(nick);
       setGroupIds(ids);
+      setPendingIds((p) => p.filter((id) => id !== gid));
       setGroupId(gid);
+    },
+    addPending: async (gid, nick) => {
+      await AsyncStorage.setItem('nickname', nick);
+      rememberBoard(uid, gid, 'pending');
+      setNickname(nick);
+      setPendingIds((p) => (p.includes(gid) ? p : [...p, gid]));
+    },
+    settlePending: (gid, approved) => {
+      rememberBoard(uid, gid, approved ? 'joined' : null);
+      setPendingIds((p) => p.filter((id) => id !== gid));
+      if (!approved) return;
+      setGroupIds((ids) => (ids.includes(gid) ? ids : [...ids, gid]));
+      setGroupId((current) => current ?? gid);
     },
     switchGroup: async (gid) => {
       await AsyncStorage.setItem('groupId', gid);
@@ -176,13 +235,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const ids = groupIds.filter((id) => id !== groupId);
       const next = ids[0] ?? null;
       await saveGroups(ids, next);
+      if (groupId) rememberBoard(uid, groupId, null);
       setGroupIds(ids);
       setGroupId(next);
     },
     loginWithGoogle: async () => {
-      const signed = await signInWithGoogle(nickname, groupIds);
+      const signed = await signInWithGoogle(nickname, { groupIds, pendingIds });
       if (!signed) return false;
-      apply(await settle({ nickname, avatarUrl, groupId, groupIds }, signed, 'google'));
+      apply(await settle({ nickname, avatarUrl, groupId, groupIds, pendingIds }, signed, 'google'));
       return true;
     },
   };

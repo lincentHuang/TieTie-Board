@@ -1,10 +1,13 @@
 import { getRandomBytes } from 'expo-crypto';
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   deleteField,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   limit,
   onSnapshot,
@@ -17,6 +20,7 @@ import {
   updateDoc,
   addDoc,
   where,
+  writeBatch,
   type DocumentData,
   type Query,
 } from 'firebase/firestore';
@@ -29,6 +33,11 @@ import {
   STATUSES,
   type BoardDigest,
   type BoardItem,
+  type BoardState,
+  type Boards,
+  type GroupInfo,
+  type JoinRequest,
+  type JoinStatus,
   type Member,
   type MemberProfile,
   type QuickAlert,
@@ -38,9 +47,13 @@ import {
  * Firestore 結構：
  *   groups/{邀請碼}                 name, ownerId, createdAt
  *   groups/{邀請碼}/members/{uid}   name, avatarUrl?, joinedAt, pushToken?, pushOS?
+ *   groups/{邀請碼}/joinRequests/{uid}  name, avatarUrl?, createdAt（等房主同意的加入申請）
+ *   groups/{邀請碼}/lineGroups/{LINE 群組 ID}  boundAt, boundBy（綁定的 LINE 群組，只有伺服器能讀寫）
  *   groups/{邀請碼}/items/{id}      BoardItem（白板上的便利貼 / 圖片 / 貼圖 / 公告）
  *   groups/{邀請碼}/alerts/{id}     QuickAlert（快速通報）
  *   lineAccounts/{LINE 使用者 ID}   uid（LINE 帳號對應的成員身分，只有伺服器 /api/line-login 能讀寫）
+ *   users/{uid}                     groupIds, pendingIds, updatedAt（帳號上記的公布欄清單，換裝置登入同一個帳號也找得回來；
+ *                                   只是索引，讀不讀得到公布欄還是看 members）
  */
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易看錯的 0/O/1/I
 
@@ -48,6 +61,8 @@ const groupRef = (gid: string) => doc(db, 'groups', gid);
 const itemsRef = (gid: string) => collection(db, 'groups', gid, 'items');
 const membersRef = (gid: string) => collection(db, 'groups', gid, 'members');
 const alertsRef = (gid: string) => collection(db, 'groups', gid, 'alerts');
+const joinRequestsRef = (gid: string) => collection(db, 'groups', gid, 'joinRequests');
+const accountRef = (uid: string) => doc(db, 'users', uid);
 
 export const normalizeCode = (input: string) => input.trim().toUpperCase();
 
@@ -65,7 +80,7 @@ export async function createGroup(name: string, uid: string, profile: MemberProf
       return true;
     });
     if (created) {
-      await joinGroup(code, uid, profile);
+      await saveMember(code, uid, profile);
       return code;
     }
   }
@@ -74,11 +89,26 @@ export async function createGroup(name: string, uid: string, profile: MemberProf
 
 const profileData = (p: MemberProfile) => ({ name: p.name, avatarUrl: p.avatarUrl ?? deleteField() });
 
-/** 邀請碼不存在時回傳 false；已經是成員就只更新名字和頭像 */
-export async function joinGroup(gid: string, uid: string, profile: MemberProfile) {
-  if (!(await getDoc(groupRef(gid))).exists()) return false;
-  await setDoc(doc(membersRef(gid), uid), { ...profileData(profile), joinedAt: serverTimestamp() }, { merge: true });
-  return true;
+/**
+ * 寫入成員資料：已經是成員就只更新名字和頭像。
+ * 還不是成員時只有房主能寫（建立群組時加自己）；其他人要走 joinBoard（src/lib/join.ts）
+ */
+export const saveMember = (gid: string, uid: string, profile: MemberProfile) =>
+  setDoc(doc(membersRef(gid), uid), { ...profileData(profile), joinedAt: serverTimestamp() }, { merge: true });
+
+/** 自己是不是已經是這個公布欄的成員（自己的成員資料隨時讀得到） */
+export const isMemberOf = async (gid: string, uid: string) => (await getDoc(doc(membersRef(gid), uid))).exists();
+
+/**
+ * 換帳號前（還是房主的時候）先把新帳號加成成員、房主交給它；不是房主就什麼都不做。
+ * 不然換過去之後，新帳號要等房主同意才能回來，可是房主就是自己。
+ */
+export async function handOverIfOwner(gid: string, from: string, to: string, profile: MemberProfile) {
+  if ((await getDoc(groupRef(gid))).data()?.ownerId !== from) return;
+  const batch = writeBatch(db);
+  batch.set(doc(membersRef(gid), to), { ...profileData(profile), joinedAt: serverTimestamp() }, { merge: true });
+  batch.update(groupRef(gid), { ownerId: to });
+  await batch.commit();
 }
 
 /** LINE 的名字或大頭貼換了：更新自己在這個公布欄上的樣子 */
@@ -96,8 +126,21 @@ const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T
 const strList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-export const watchGroupName = (gid: string, cb: (name: string) => void) =>
-  onSnapshot(groupRef(gid), (s) => cb(str(s.data()?.name, '公布欄')));
+const toGroup = (d: Record<string, unknown> | undefined): GroupInfo => ({
+  name: str(d?.name, '公布欄'),
+  ownerId: str(d?.ownerId, ''),
+});
+
+/** 邀請碼不存在時回傳 null */
+export async function fetchGroup(gid: string) {
+  const snap = await getDoc(groupRef(gid));
+  return snap.exists() ? toGroup(snap.data()) : null;
+}
+
+export const watchGroup = (gid: string, cb: (group: GroupInfo) => void) =>
+  onSnapshot(groupRef(gid), (s) => cb(toGroup(s.data())));
+
+export const watchGroupName = (gid: string, cb: (name: string) => void) => watchGroup(gid, (g) => cb(g.name));
 
 const toMember = (uid: string, d: Record<string, unknown>): Member => ({
   uid,
@@ -107,6 +150,94 @@ const toMember = (uid: string, d: Record<string, unknown>): Member => ({
 
 export const watchMembers = (gid: string, cb: (members: Member[]) => void) =>
   onSnapshot(membersRef(gid), (s) => cb(s.docs.map((d) => toMember(d.id, d.data()))));
+
+/** 自己在這個公布欄的狀態（自己的成員資料、加入申請隨時讀得到） */
+export async function fetchBoardState(gid: string, uid: string): Promise<BoardState> {
+  const [member, request] = await Promise.all([
+    getDoc(doc(membersRef(gid), uid)),
+    getDoc(doc(joinRequestsRef(gid), uid)),
+  ]);
+  if (member.exists()) return 'joined';
+  return request.exists() ? 'pending' : null;
+}
+
+/* ---------- 帳號上的公布欄清單（換手機、換電腦登入同一個帳號，也看得到之前加入的） ---------- */
+
+/** 還沒有紀錄（新帳號、還沒同步過）就是空的 */
+export async function fetchAccountBoards(uid: string): Promise<Boards> {
+  const d = (await getDoc(accountRef(uid))).data();
+  return { groupIds: strList(d?.groupIds), pendingIds: strList(d?.pendingIds) };
+}
+
+/** 補上帳號還沒記的公布欄（用 arrayUnion，別台裝置同時加的不會被蓋掉） */
+export const addAccountBoards = (uid: string, boards: Boards) =>
+  setDoc(
+    accountRef(uid),
+    { groupIds: arrayUnion(...boards.groupIds), pendingIds: arrayUnion(...boards.pendingIds), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+
+/** 加入、送出申請、離開、申請有結果時記到帳號上 */
+export const recordBoard = (uid: string, gid: string, state: BoardState) =>
+  setDoc(
+    accountRef(uid),
+    {
+      groupIds: state === 'joined' ? arrayUnion(gid) : arrayRemove(gid),
+      pendingIds: state === 'pending' ? arrayUnion(gid) : arrayRemove(gid),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+/* ---------- 加入申請（不是從綁定的 LINE 群組點進來的人，要等房主同意） ---------- */
+
+/** 送出（或更新）加入申請；名字最多 30 字（規則也會擋） */
+export const requestToJoin = (gid: string, uid: string, profile: MemberProfile) =>
+  setDoc(doc(joinRequestsRef(gid), uid), {
+    name: profile.name.slice(0, 30),
+    ...(profile.avatarUrl ? { avatarUrl: profile.avatarUrl } : null),
+    createdAt: serverTimestamp(),
+  });
+
+/** 申請的人收回、或房主拒絕 */
+export const removeJoinRequest = (gid: string, uid: string) => deleteDoc(doc(joinRequestsRef(gid), uid));
+
+/** 房主同意：加成成員、刪掉申請（同一次寫入，申請的人不會看到「申請不見了、也還不是成員」） */
+export async function approveJoinRequest(gid: string, req: JoinRequest) {
+  const batch = writeBatch(db);
+  batch.set(doc(membersRef(gid), req.uid), { ...profileData(req), joinedAt: serverTimestamp() }, { merge: true });
+  batch.delete(doc(joinRequestsRef(gid), req.uid));
+  await batch.commit();
+}
+
+/** 房主看等待中的申請，先送出的在前（只有房主讀得到，別人訂閱會被規則擋下） */
+export const watchJoinRequests = (gid: string, cb: (requests: JoinRequest[]) => void) =>
+  onSnapshot(
+    joinRequestsRef(gid),
+    (s) => {
+      const list = s.docs.map((d): JoinRequest => ({ ...toMember(d.id, d.data()), createdAt: millis(d.data().createdAt) }));
+      cb(list.sort((a, b) => (a.createdAt ?? Infinity) - (b.createdAt ?? Infinity)));
+    },
+    (e) => console.warn('讀取加入申請失敗', gid, e),
+  );
+
+/**
+ * 我送出的申請現在怎樣了。申請還在 = 等待中；不見了就去伺服器看自己是不是已經是成員。
+ * 本機快取說「沒有」不算數（可能只是還沒跟伺服器同步），自己剛收回的也不算（那不是房主拒絕）
+ */
+export const watchJoinStatus = (gid: string, uid: string, cb: (status: JoinStatus) => void) =>
+  onSnapshot(
+    doc(joinRequestsRef(gid), uid),
+    (s) => {
+      if (s.exists()) return cb('pending');
+      if (s.metadata.fromCache || s.metadata.hasPendingWrites) return;
+      getDocFromServer(doc(membersRef(gid), uid)).then(
+        (m) => cb(m.exists() ? 'approved' : 'rejected'),
+        (e) => console.warn('確認加入狀態失敗', gid, e),
+      );
+    },
+    (e) => console.warn('讀取加入申請失敗', gid, e),
+  );
 
 function toItem(id: string, d: Record<string, unknown>): BoardItem {
   return {

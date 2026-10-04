@@ -99,20 +99,36 @@ export async function googleLogin() {
 export async function exchangeLineToken(lineIdToken: string) {
   const user = auth.currentUser;
   const firebaseIdToken = user?.isAnonymous ? await user.getIdToken() : undefined;
-  const res = await fetch('/api/line-login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idToken: lineIdToken, firebaseIdToken }),
-  });
-  const data: unknown = await res.json().catch(() => null);
-  const body = isRecord(data) ? data : {};
-  if (!res.ok || typeof body.token !== 'string' || typeof body.uid !== 'string') {
-    throw new Error(typeof body.error === 'string' ? body.error : `LINE 登入失敗（${res.status}）`);
-  }
+  const body = await postApi('/api/line-login', { idToken: lineIdToken, firebaseIdToken }, 'LINE 登入失敗');
+  if (typeof body.token !== 'string' || typeof body.uid !== 'string') throw new Error('LINE 登入失敗，請稍後再試');
   return { token: body.token, uid: body.uid };
 }
 
+/**
+ * 用 LINE 登入的人點邀請連結：請伺服器（Vercel 上的 /api/join）確認他在不在這個公布欄綁定的 LINE 群組裡，
+ * 在的話伺服器直接把他加成成員，回傳 true；不在（或還沒綁定群組）回傳 false，改成送出申請等房主同意。
+ */
+export async function joinWithLineGroup(gid: string, profile: { name: string; avatarUrl: string | null }) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('還沒登入，請重新整理再試一次');
+  const body = await postApi('/api/join', { idToken: await user.getIdToken(), code: gid, ...profile }, '加入失敗');
+  return body.joined === true;
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** 呼叫網站自己的伺服器函式（只有網頁版用得到）；失敗時用伺服器給的中文訊息 */
+async function postApi(path: string, payload: Record<string, unknown>, failure: string) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data: unknown = await res.json().catch(() => null);
+  const body = isRecord(data) ? data : {};
+  if (!res.ok) throw new Error(typeof body.error === 'string' ? body.error : `${failure}（${res.status}）`);
+  return body;
+}
 
 export async function signInWithToken(token: string) {
   const cred = await signInWithCustomToken(auth, token);

@@ -48,3 +48,10 @@ export async function shareToLine(text: string) {
   const res = await liff.shareTargetPicker([{ type: 'text', text }]);
   return Boolean(res);
 }
+
+/** 在 LINE 裡打開時，改用手機的瀏覽器打開網址（LINE 裡不能安裝到主畫面、下載 App）；不在 LINE 裡回傳 false */
+export function openInExternalBrowser(url: string) {
+  if (!initialized || !liff.isInClient()) return false;
+  liff.openWindow({ url, external: true });
+  return true;
+}

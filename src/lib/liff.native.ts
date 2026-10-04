@@ -12,3 +12,5 @@ export const forgetLineLogin = () => {};
 export const canShareToLine = () => false;
 
 export const shareToLine = async (_text: string) => false;
+
+export const openInExternalBrowser = (_url: string) => false;

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { askConfirm, showError } from '@/components/dialogs';
@@ -9,6 +9,9 @@ import { AlertOverlay } from '@/features/alerts/AlertOverlay';
 import { notifyBoardChange } from '@/features/alerts/notify';
 import { QuickAlertSheet } from '@/features/alerts/QuickAlertSheet';
 import { usePushRegistration } from '@/features/alerts/usePushRegistration';
+import { InstallBanner } from '@/features/settings/InstallBanner';
+import { SettingsSheet } from '@/features/settings/SettingsSheet';
+import { AccountCard } from '@/features/setup/AccountCard';
 import { BoardSwitcherSheet } from '@/features/setup/BoardSwitcherSheet';
 import { useWidgetSync } from '@/features/widgets/useWidgetSync';
 import { countdownLabel, whenLabel } from '@/lib/dates';
@@ -39,10 +42,11 @@ import { OrganizeSheet } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
 import { useBoard } from './useBoard';
+import { useJoinRequests } from './useJoinRequests';
 import { useViewPrefs } from './useViewPrefs';
 
 type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number } };
-type Panel = 'none' | 'stickers' | 'announcements' | 'invite' | 'boards' | 'alert';
+type Panel = 'none' | 'stickers' | 'announcements' | 'invite' | 'boards' | 'alert' | 'settings';
 
 const TOOLBAR_HEIGHT = 76;
 /** 便利貼有照片時多長高一點，文字才不會被照片擠扁 */
@@ -60,7 +64,12 @@ export function BoardScreen({
   const gid = session.groupId!;
   const uid = session.uid;
   const insets = useSafeAreaInsets();
-  const { items, members, groupName } = useBoard(gid);
+  // 手機直放時頂部比較擠：家人頭像少放幾個，留位置給公布欄名稱
+  const compact = useWindowDimensions().width < 440;
+  const { items, members, groupName, ownerId } = useBoard(gid);
+  const isOwner = ownerId === uid;
+  // 房主才有：等我同意的加入申請
+  const requests = useJoinRequests(gid, isOwner);
   // 所有加入的公布欄（不只目前這個）：給桌面小工具與快速通報用
   const digests = useBoardDigests(session.groupIds);
   useWidgetSync(digests, uid, gid);
@@ -252,15 +261,22 @@ export function BoardScreen({
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
-      {/* 頂部：群組名稱（點了切換公布欄）、家人、公告按鈕 */}
-      <View style={s.header}>
+      {/* 頂部：群組名稱（點了切換公布欄）、家人、通報、公告、設定 */}
+      <View style={[s.header, compact && s.headerCompact]}>
         <Pressable onPress={() => setPanel('boards')} style={s.titleBtn} accessibilityLabel={`${groupName}，切換或新增公布欄`}>
-          <Text style={s.groupName} numberOfLines={1}>
+          <Text style={[s.groupName, compact && s.groupNameCompact]} numberOfLines={1}>
             {groupName}
           </Text>
           <Ionicons name="chevron-down" size={20} color={C.sub} />
         </Pressable>
-        <MemberRow members={members} uid={uid} unreadOf={unreadOf} onPress={() => setPanel('invite')} />
+        <MemberRow
+          members={members}
+          uid={uid}
+          max={compact ? 2 : 4}
+          unreadOf={unreadOf}
+          requestCount={requests.length}
+          onPress={() => setPanel('invite')}
+        />
         <Squishy onPress={() => setPanel('alert')} style={[s.headerBtn, s.alertBtn]} accessibilityLabel="快速通報">
           <Ionicons name="megaphone" size={21} color="#FFF" />
         </Squishy>
@@ -271,6 +287,9 @@ export function BoardScreen({
               <Text style={s.badgeText}>{pending.length}</Text>
             </View>
           ) : null}
+        </Squishy>
+        <Squishy onPress={() => setPanel('settings')} style={[s.headerBtn, s.settingsBtn]} accessibilityLabel="設定">
+          <Ionicons name="settings-sharp" size={20} color={C.sub} />
         </Squishy>
       </View>
 
@@ -337,6 +356,9 @@ export function BoardScreen({
           </Text>
         </View>
       ) : null}
+
+      {/* 手機網頁版：提醒把公布欄裝到手機（按掉一週內不再出現，設定裡一直找得到） */}
+      <InstallBanner bottom={toolbarBottom + TOOLBAR_HEIGHT + 12} onOpen={() => setPanel('settings')} />
 
       {/* 底部工具列：沒選取時是新增工具，選取時變成項目操作 */}
       <View style={[s.toolbarWrap, { paddingBottom: toolbarBottom }]} pointerEvents="box-none">
@@ -430,12 +452,26 @@ export function BoardScreen({
           groupName={groupName}
           members={members}
           uid={uid}
+          ownerId={ownerId}
+          requests={requests}
           unreadOf={unreadOf}
           onLeave={leave}
           onClose={() => setPanel('none')}
         />
       ) : null}
       {panel === 'boards' ? <BoardSwitcherSheet onClose={() => setPanel('none')} /> : null}
+      {panel === 'settings' ? (
+        <SettingsSheet
+          account={
+            <AccountCard
+              style={{ marginTop: 0 }}
+              hint="登入 LINE 或 Google，換手機、換電腦都還是同一個人"
+              anonymousNote="名字只存在這台裝置上"
+            />
+          }
+          onClose={() => setPanel('none')}
+        />
+      ) : null}
       {panel === 'alert' || quickAlert ? (
         <QuickAlertSheet
           gid={gid}
@@ -452,31 +488,49 @@ export function BoardScreen({
   );
 }
 
-/** 頂部的家人頭像：還有公告沒看的人，頭像右上角有小圓點 */
+/** 頂部的家人頭像：還有公告沒看的人，頭像右上角有小圓點；有人申請加入時（只有房主看得到）右上角顯示人數 */
 function MemberRow({
   members,
   uid,
+  max,
   unreadOf,
+  requestCount,
   onPress,
 }: {
   members: Member[];
   uid: string;
+  /** 最多顯示幾個頭像，其他的變成 +N */
+  max: number;
   unreadOf: (uid: string) => number;
+  requestCount: number;
   onPress: () => void;
 }) {
   const sorted = [...members].sort((a, b) => Number(b.uid === uid) - Number(a.uid === uid));
-  const shown = sorted.slice(0, 4);
+  const shown = sorted.slice(0, max);
   return (
-    <Pressable onPress={onPress} style={s.memberRow} accessibilityLabel="家人與邀請碼">
+    <Pressable
+      onPress={onPress}
+      style={s.memberRow}
+      accessibilityLabel={requestCount > 0 ? `家人與邀請碼，有 ${requestCount} 個人想加入` : '家人與邀請碼'}>
       {shown.map((m, i) => (
         <View key={m.uid} style={{ marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i }}>
           <MemberAvatar member={m} size={34} dot={unreadOf(m.uid) > 0} />
         </View>
       ))}
-      {members.length > shown.length ? <Text style={s.more}>+{members.length - shown.length}</Text> : null}
-      <View style={s.addBubble}>
-        <Ionicons name="add" size={16} color={C.sub} />
-      </View>
+      {members.length > shown.length ? (
+        <Text style={[s.more, max < 4 && s.moreCompact]}>+{members.length - shown.length}</Text>
+      ) : null}
+      {/* 擠的時候有 +N 就不放「+」，點整排一樣打開家人與邀請 */}
+      {max < 4 && members.length > shown.length ? null : (
+        <View style={s.addBubble}>
+          <Ionicons name="add" size={16} color={C.sub} />
+        </View>
+      )}
+      {requestCount > 0 ? (
+        <View style={s.badge}>
+          <Text style={s.badgeText}>{requestCount}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -497,8 +551,10 @@ const s = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   loading: { fontFamily: F.display, fontSize: 16, color: C.sub, marginTop: 14 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
+  headerCompact: { paddingHorizontal: 12, gap: 6 },
   titleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
   groupName: { flexShrink: 1, fontSize: 26, fontFamily: F.display, color: C.ink },
+  groupNameCompact: { fontSize: 22 },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -511,6 +567,7 @@ const s = StyleSheet.create({
     borderColor: C.line,
   },
   more: { fontFamily: F.display, fontSize: 12, color: C.sub, marginLeft: 4 },
+  moreCompact: { marginRight: 6 },
   addBubble: {
     width: 28,
     height: 28,
@@ -531,6 +588,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   alertBtn: { backgroundColor: C.primary, borderColor: '#FFC2D6' },
+  settingsBtn: { backgroundColor: '#F4EEFF', borderColor: '#F4EEFF' },
   badge: {
     position: 'absolute',
     top: -4,
