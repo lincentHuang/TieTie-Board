@@ -138,8 +138,8 @@ npx expo run:android   # 需要 Android Studio
 
 ### LINE 登入（家庭群組一點就加入）
 
-網頁版放在 LINE 的 **LINE MINI App**（LIFF）裡：家人在 LINE 群組點邀請連結
-`https://miniapp.line.me/{LIFF ID}?join=邀請碼`，就會在 LINE 裡打開公布欄、用 LINE 的名字和大頭貼直接加入。
+網頁版用 LINE 的 **LIFF** 在 LINE 裡打開：家人在 LINE 群組點邀請連結
+`https://liff.line.me/{LIFF ID}?join=邀請碼`，就會在 LINE 裡打開公布欄、用 LINE 的名字和大頭貼直接加入。
 沒設定 `EXPO_PUBLIC_LIFF_ID` 時一切照舊（匿名登入、自己取暱稱、輸入邀請碼）。
 
 運作方式：
@@ -154,19 +154,19 @@ npx expo run:android   # 需要 Android Studio
 
 設定步驟（只要做一次）：
 
-1. **LINE Developers Console**（<https://developers.line.biz/console/>）建立 Provider，再建立 **LINE MINI App** 頻道（地區選台灣）
-   - 頻道裡有 Developing / Review / Published 三組設定，各有自己的 **LIFF ID** 和 **Endpoint URL**
-   - Endpoint URL 都填 `https://tietie-board.vercel.app`
-   - 正式給家人用的是 **Published** 那組 LIFF ID（Developing 只有管理員和測試人員打得開）
-   - 不用審核就能以「未驗證 MINI App」發佈（標題列會顯示網域）
-   - **Channel ID** 在「Channel basic settings」分頁
+1. **LINE Developers Console**（<https://developers.line.biz/console/>）建立 Provider，再建立 **LINE Login** 頻道（地區選台灣、App types 勾 Web app）
+   - 台灣的 LINE MINI App 頻道要先經過 LINE 台灣核准，所以用 LINE Login 頻道 + LIFF
+   - **LIFF** 分頁 → Add：Size 選 Full、Endpoint URL 填 `https://tietie-board.vercel.app`、Scopes 勾 `openid` 和 `profile`
+   - 同一頁打開 **shareTargetPicker**（「傳到 LINE 聊天室」按鈕要用）
+   - 頻道狀態從 **Developing** 切成 **Published**（Developing 只有管理員和測試人員能登入）
+   - **Channel ID** 在「Basic settings」分頁
 2. **Firebase 主控台** → 專案設定 → 服務帳戶 → 產生新的私密金鑰（下載一個 JSON 檔）
    - 這是管理者金鑰，**不能進 git、不能貼到聊天或文件裡**，只貼到 Vercel 的環境變數，貼完就把檔案刪掉
 3. **Vercel 專案** → Settings → Environment Variables（Production）新增：
 
    | 名稱 | 值 | 說明 |
    |---|---|---|
-   | `EXPO_PUBLIC_LIFF_ID` | Published 那組 LIFF ID | 會打包進網頁（本來就是公開的） |
+   | `EXPO_PUBLIC_LIFF_ID` | LIFF ID | 會打包進網頁（本來就是公開的） |
    | `LINE_CHANNEL_ID` | Channel ID | 只有伺服器用，驗證 LINE 的 ID token |
    | `FIREBASE_SERVICE_ACCOUNT` | 服務帳戶 JSON 整份貼上 | 只有伺服器用，勾選 Sensitive |
 

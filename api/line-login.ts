@@ -17,7 +17,7 @@ import { FieldValue, getFirestore } from 'firebase-admin/firestore';
  * 這裡只需要簽 custom token、驗匿名帳號的 ID token，照 Firebase 文件用 node:crypto 自己做。
  *
  * 環境變數（Vercel 專案設定；是機密，不能用 EXPO_PUBLIC_ 開頭、不能進 git）：
- *   LINE_CHANNEL_ID           LINE MINI App 頻道的 Channel ID
+ *   LINE_CHANNEL_ID           LINE Login 頻道的 Channel ID
  *   FIREBASE_SERVICE_ACCOUNT  Firebase 服務帳戶金鑰（整份 JSON 貼上）
  */
 

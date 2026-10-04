@@ -1,5 +1,5 @@
 /**
- * LINE 登入（LIFF / LINE MINI App）共用的設定與小工具，各平台都能用。
+ * LINE 登入（LIFF）共用的設定與小工具，各平台都能用。
  * 沒設 EXPO_PUBLIC_LIFF_ID 就照舊：匿名登入、自己取暱稱、輸入邀請碼。
  */
 export const LIFF_ID = process.env.EXPO_PUBLIC_LIFF_ID ?? '';
@@ -14,7 +14,7 @@ export interface LineIdentity {
 }
 
 /** 貼到家庭群組的邀請連結：在 LINE 裡點開就用自己的 LINE 名字和頭像加入這個公布欄 */
-export const lineInviteLink = (code: string) => (LIFF_ID ? `https://miniapp.line.me/${LIFF_ID}?join=${code}` : null);
+export const lineInviteLink = (code: string) => (LIFF_ID ? `https://liff.line.me/${LIFF_ID}?join=${code}` : null);
 
 const asCode = (v: unknown) => {
   const code = typeof v === 'string' ? v.trim().toUpperCase() : '';
