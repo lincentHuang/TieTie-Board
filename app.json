@@ -105,8 +105,7 @@
           "enableBackgroundRemoteNotifications": true
         }
       ],
-      "expo-font",
-      "expo-sharing"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
