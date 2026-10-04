@@ -61,6 +61,24 @@
         "EXPO_PUBLIC_FIREBASE_EMULATOR_HOST": "127.0.0.1"
       },
       "port": 8084
+    },
+    {
+      "name": "web-open-in-app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "expo",
+        "start",
+        "--web",
+        "--port",
+        "8085"
+      ],
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "demo-bulletin",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "demo-key",
+        "EXPO_PUBLIC_FIREBASE_EMULATOR_HOST": "127.0.0.1",
+        "EXPO_PUBLIC_ANDROID_APK_URL": "https://github.com/lincentHuang/TieTie-Board/releases/latest/download/tietie-board.apk"
+      },
+      "port": 8085
     }
   ]
 }
