@@ -15,7 +15,7 @@ import {
   type ItemStatus,
 } from '@/lib/types';
 
-export function StatusPicker({ value, onChange }: { value: ItemStatus; onChange: (status: ItemStatus) => void }) {
+export function StatusPicker({ value, onChange }: { value: ItemStatus | null; onChange: (status: ItemStatus) => void }) {
   return (
     <Segmented<ItemStatus>
       value={value}
@@ -126,6 +126,52 @@ export function OrganizeSheet({
       <Text style={s.hint}>全家都可以改。排隊「依狀態」分隊時，改了它就會自己走到那一隊。</Text>
       <Label>標籤</Label>
       <TagPicker value={item.tags} suggestions={suggestions} onChange={(tags) => onChange({ tags })} />
+    </Sheet>
+  );
+}
+
+type OrganizePatch = Partial<Pick<BoardItem, 'status' | 'tags'>>;
+
+/**
+ * 多選後一起整理：狀態一次改成同一個；標籤只顯示大家都有的，
+ * 加上去的會加到每一個（滿 5 個的就不加），拿掉的會從每一個拿掉
+ */
+export function OrganizeManySheet({
+  items,
+  suggestions,
+  onChange,
+  onClose,
+}: {
+  items: BoardItem[];
+  suggestions: string[];
+  onChange: (patches: { id: string; patch: OrganizePatch }[]) => void;
+  onClose: () => void;
+}) {
+  const status = items.every((i) => i.status === items[0]?.status) ? (items[0]?.status ?? null) : null;
+  const common = (items[0]?.tags ?? []).filter((t) => items.every((i) => i.tags.includes(t)));
+  const changeTags = (next: string[]) => {
+    const added = next.filter((t) => !common.includes(t));
+    const removed = common.filter((t) => !next.includes(t));
+    onChange(
+      items.map((i) => {
+        const kept = i.tags.filter((t) => !removed.includes(t));
+        const tags = [...kept, ...added.filter((t) => !kept.includes(t))].slice(0, MAX_TAGS);
+        return { id: i.id, patch: { tags } };
+      }),
+    );
+  };
+
+  return (
+    <Sheet visible title={`整理 ${items.length} 個`} onClose={onClose} footer={<Button style={{ flex: 1 }} big label="好了" onPress={onClose} />}>
+      <Text style={s.itemTitle} numberOfLines={2}>
+        {items.map(itemTitle).join('、')}
+      </Text>
+      <Label>狀態</Label>
+      <StatusPicker value={status} onChange={(st) => onChange(items.map((i) => ({ id: i.id, patch: { status: st } })))} />
+      <Text style={s.hint}>{status === null ? '現在每個的狀態不一樣，選一個就全部改成一樣。' : '選一個就全部一起改。'}</Text>
+      <Label>大家都有的標籤</Label>
+      <TagPicker value={common} suggestions={suggestions} onChange={changeTags} />
+      <Text style={s.hint}>加上的標籤會貼到每一個；拿掉的會從每一個拿掉。</Text>
     </Sheet>
   );
 }

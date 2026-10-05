@@ -1,5 +1,5 @@
 import { sendPush, type PushMessage } from '@/lib/push-send';
-import { addAlert, fetchPushRecipients, type NewAlert, type PushRecipient } from '@/lib/repo';
+import { addAlert, fetchPushRecipient, fetchPushRecipients, type NewAlert, type PushRecipient } from '@/lib/repo';
 import { itemTitle, type BoardItem } from '@/lib/types';
 
 /** 推播帶的資料：點通知時打開 gid 這個公布欄；收到時背景任務會順便更新小工具 */
@@ -57,6 +57,20 @@ export async function sendQuickAlert(gid: string, boardName: string, alert: NewA
   } catch (e) {
     console.warn('通報推播失敗', e);
   }
+}
+
+/**
+ * 只通知某一個人（例如有人想改他貼的東西、他的編輯申請被同意了）：點了打開這個公布欄。
+ * 對方沒開通知就不送；背景執行，失敗只記錄
+ */
+export function notifyPerson(gid: string, toUid: string, title: string, body: string) {
+  fetchPushRecipient(gid, toUid)
+    .then((r) =>
+      r
+        ? sendPush(buildMessages([r], { title, body, channelId: 'board', urgent: false }, { kind: 'board', gid }))
+        : undefined,
+    )
+    .catch((e) => console.warn('通知失敗', e));
 }
 
 /** 小工具上看得到的欄位 */

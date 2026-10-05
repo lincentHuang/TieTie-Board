@@ -41,9 +41,31 @@ export interface BoardItem {
 
   authorId: string;
   authorName: string;
+  /** 作者同意可以改內容的人（uid）；房主不用在這裡也能改 */
+  editors: string[];
   createdAt: number | null;
   /** uid → 確認時間 */
   ackBy: Record<string, unknown>;
+}
+
+/** 作者、房主、作者同意過的人可以改內容 */
+export const canEditItem = (item: BoardItem, uid: string, ownerId: string) =>
+  item.authorId === uid || ownerId === uid || item.editors.includes(uid);
+
+/** 作者和房主可以刪掉 */
+export const canDeleteItem = (item: BoardItem, uid: string, ownerId: string) =>
+  item.authorId === uid || ownerId === uid;
+
+/** 想改別人貼的東西：要作者同意，同意後就能一直改那一張（文件 id = 項目 id + _ + 申請的人） */
+export interface EditRequest {
+  id: string;
+  itemId: string;
+  /** 項目的作者：要他同意 */
+  authorId: string;
+  requesterId: string;
+  requesterName: string;
+  /** 毫秒；剛送出、伺服器時間還沒回來時是 null */
+  createdAt: number | null;
 }
 
 /** 便利貼 / 公告附的檔案。內容切成好幾片另外存（見 repo 的 uploadFile），項目上只記這些 */

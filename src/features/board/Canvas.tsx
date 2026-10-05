@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { C, F, Ionicons, type IconName } from '@/components/ui';
 import { byQueueOrder, type BoardItem, type Geometry } from '@/lib/types';
 
-import { CanvasItem } from './CanvasItem';
+import { CanvasItem, type GroupDrag } from './CanvasItem';
 import { QueueBar } from './QueueBar';
 import { filterChips, groupQueue, matchesFilter, type Filter, type QueueGroup } from './queue-filter';
 import { queueLayout } from './queue-layout';
@@ -23,12 +23,21 @@ const BAR_TOP = 60;
 const BAR_H = 42;
 const BAR_GAP = 22;
 
+/**
+ * 用手指操作（手機、平板）：項目要先點一下選起來才能拖，免得想滑動畫面時不小心拖走；
+ * 用滑鼠的電腦直接拖就好
+ */
+const TOUCH =
+  Platform.OS !== 'web' || (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true);
+
 export interface CanvasHandle {
   /** 目前畫面中心在白板上的座標 */
   viewCenter: () => { x: number; y: number };
   /** 把鏡頭移到這個項目；排隊時如果它被篩選藏起來，會先清掉篩選 */
   focus: (id: string) => void;
   fitAll: () => void;
+  /** 現在白板上看得到的項目（排隊時不含被篩選藏起來的），多選「全選」用 */
+  visibleIds: () => string[];
 }
 
 interface Props {
@@ -41,13 +50,22 @@ interface Props {
   /** 排隊時怎麼分隊 */
   group: QueueGroup;
   onChangeGroup: (group: QueueGroup) => void;
-  selectedId: string | null;
+  selectedIds: string[];
+  /** 長按進入的多選模式 */
+  multi: boolean;
   isPending: (item: BoardItem) => boolean;
   readCount: (item: BoardItem) => number;
   memberCount: number;
-  onSelect: (id: string | null) => void;
+  onTap: (id: string) => void;
+  onLongPress: (id: string) => void;
+  /** 點了空白的地方 */
+  onClear: () => void;
+  /** 這些選取的項目被篩選藏起來了 */
+  onHide: (ids: string[]) => void;
   onOpen: (id: string) => void;
   onCommit: (id: string, geo: Geometry) => void;
+  /** 多選時整批一起拖完：每個選取的項目都移動了 (dx, dy) */
+  onCommitGroup: (dx: number, dy: number) => void;
 }
 
 export function Canvas({
@@ -58,21 +76,32 @@ export function Canvas({
   onChangeMode,
   group,
   onChangeGroup,
-  selectedId,
+  selectedIds,
+  multi,
   isPending,
   readCount,
   memberCount,
-  onSelect,
+  onTap,
+  onLongPress,
+  onClear,
+  onHide,
   onOpen,
   onCommit,
+  onCommitGroup,
 }: Props) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const scale = useSharedValue(1);
-  const start = useSharedValue({ tx: 0, ty: 0, s: 1, fx: 0, fy: 0 });
+  // 手勢只記「上一格」，每一格只加上這一格的變化：兩根手指沒有同時放開、中途多放一根手指，畫面都不會跳
+  const panLast = useSharedValue({ x: 0, y: 0, n: 0 });
+  const pinchLast = useSharedValue({ s: 1, n: 0 });
+  // 網頁版的 Gesture Handler 給的縮放中心是整個頁面的座標（手機是畫布裡的座標），要扣掉畫布在頁面上的位置
+  const pageOffset = useSharedValue({ x: 0, y: 0 });
   // 正在拖曳 / 縮放白板上的項目時，畫布本身不要跟著移動
   const itemBusy = useSharedValue(false);
   const ignorePan = useSharedValue(false);
+  // 多選時整批一起拖：大家都照著同一個位移走
+  const groupDrag = useSharedValue<GroupDrag>({ on: false, dx: 0, dy: 0 });
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [zoomText, setZoomText] = useState('100%');
   const containerRef = useRef<View>(null);
@@ -151,6 +180,7 @@ export function Canvas({
       animateTo(size.w / 2 - (g.x + g.w / 2) * s, size.h / 2 - (g.y + g.h / 2) * s, s);
     },
     fitAll,
+    visibleIds: () => shown.map((i) => i.id),
   }));
 
   // 換了篩選或分隊 → 隊伍重排，鏡頭回到隊伍開頭
@@ -172,11 +202,12 @@ export function Canvas({
   };
 
   // 選取的項目被篩選藏起來了 → 取消選取，免得工具列在操作看不到的東西
-  const selectedHidden = selectedId !== null && items.some((i) => i.id === selectedId) && !shown.some((i) => i.id === selectedId);
+  const hiddenSelected = selectedIds.filter((id) => items.some((i) => i.id === id) && !shown.some((i) => i.id === id));
+  const hiddenKey = hiddenSelected.join(',');
   useEffect(() => {
-    if (selectedHidden) onSelect(null);
+    if (hiddenSelected.length) onHide(hiddenSelected);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedHidden]);
+  }, [hiddenKey]);
 
 
   // 第一次拿到資料時，自動縮放到看得見全部
@@ -233,35 +264,48 @@ export function Canvas({
   // 網頁：iPhone 的 LINE 瀏覽器往下拖會關掉頁面，在白板上拖曳時擋掉
   useBlockPullToClose(containerRef);
 
+  // 平移和縮放都只套用「這一格跟上一格的差」，不記手勢開始時的位置：
+  // 以前兩個手勢各自從開始時的位置重算，一根手指先放開、縮放結束時，平移就用舊的起點把畫面拉回去（跳一下）
   const pan = Gesture.Pan()
     .minDistance(8)
     .averageTouches(true)
-    .onStart(() => {
+    .onStart((e) => {
       ignorePan.set(itemBusy.get());
-      start.set({ ...start.get(), tx: tx.get(), ty: ty.get() });
+      // 從 0 開始算：手指在啟動前已經移動的那一段也補上，畫面才會一直黏在手指下
+      panLast.set({ x: 0, y: 0, n: e.numberOfPointers });
     })
     .onUpdate((e) => {
-      if (ignorePan.get()) return;
-      tx.set(start.get().tx + e.translationX);
-      ty.set(start.get().ty + e.translationY);
+      const last = panLast.get();
+      panLast.set({ x: e.translationX, y: e.translationY, n: e.numberOfPointers });
+      // 手指數量變了：這一格的位移是重心換位置造成的，不是手指在動，不算
+      if (ignorePan.get() || e.numberOfPointers !== last.n) return;
+      tx.set(tx.get() + e.translationX - last.x);
+      ty.set(ty.get() + e.translationY - last.y);
     });
 
   const pinch = Gesture.Pinch()
     .onStart((e) => {
-      start.set({ tx: tx.get(), ty: ty.get(), s: scale.get(), fx: e.focalX, fy: e.focalY });
+      pinchLast.set({ s: e.scale, n: e.numberOfPointers });
     })
     .onUpdate((e) => {
-      const st = start.get();
-      const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, st.s * e.scale));
-      tx.set(e.focalX - ((st.fx - st.tx) / st.s) * s);
-      ty.set(e.focalY - ((st.fy - st.ty) / st.s) * s);
-      scale.set(s);
+      const last = pinchLast.get();
+      pinchLast.set({ s: e.scale, n: e.numberOfPointers });
+      // 剩一根手指、或剛多放 / 少一根手指：縮放比例會突然變，這一格不算
+      if (e.numberOfPointers < 2 || e.numberOfPointers !== last.n || last.s <= 0) return;
+      // 以兩指中間為中心縮放（中間點本身的移動交給平移）
+      const fx = e.focalX - pageOffset.get().x;
+      const fy = e.focalY - pageOffset.get().y;
+      const s0 = scale.get();
+      const s1 = Math.min(MAX_SCALE, Math.max(MIN_SCALE, (s0 * e.scale) / last.s));
+      tx.set(fx - ((fx - tx.get()) / s0) * s1);
+      ty.set(fy - ((fy - ty.get()) / s0) * s1);
+      scale.set(s1);
     })
     .onEnd(() => {
       scheduleOnRN(setZoomText, `${Math.round(scale.get() * 100)}%`);
     });
 
-  const tapEmpty = Gesture.Tap().onEnd(() => scheduleOnRN(onSelect, null));
+  const tapEmpty = Gesture.Tap().onEnd(() => scheduleOnRN(onClear));
 
   const gesture = Gesture.Race(Gesture.Simultaneous(pan, pinch), tapEmpty);
 
@@ -280,7 +324,13 @@ export function Canvas({
     <View
       ref={containerRef}
       style={s.container}
-      onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+      onLayout={(e) => {
+        setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height });
+        if (Platform.OS === 'web') {
+          const rect = (containerRef.current as unknown as HTMLElement | null)?.getBoundingClientRect();
+          if (rect) pageOffset.set({ x: rect.left, y: rect.top });
+        }
+      }}>
       <GestureDetector gesture={gesture}>
         <View style={StyleSheet.absoluteFill}>
           <DotGrid style={gridStyle} width={size.w} height={size.h} />
@@ -319,25 +369,34 @@ export function Canvas({
                 ))
               : null}
             {/* 還不知道畫面多寬時先不擺，免得排隊的人一出現就要換位置 */}
-            {size.w ? sorted.map((item) => (
-              <CanvasItem
-                key={item.id}
-                item={item}
-                spot={spotOf(item)}
-                queued={queued}
-                walkDelay={(orderOf.get(item.id) ?? 0) * walkStep}
-                now={now}
-                scale={scale}
-                busy={itemBusy}
-                selected={item.id === selectedId}
-                pending={isPending(item)}
-                readCount={readCount(item)}
-                memberCount={memberCount}
-                onSelect={onSelect}
-                onOpen={onOpen}
-                onCommit={onCommit}
-              />
-            )) : null}
+            {size.w ? sorted.map((item) => {
+              const picked = selectedIds.includes(item.id);
+              return (
+                <CanvasItem
+                  key={item.id}
+                  item={item}
+                  spot={spotOf(item)}
+                  queued={queued}
+                  walkDelay={(orderOf.get(item.id) ?? 0) * walkStep}
+                  now={now}
+                  scale={scale}
+                  busy={itemBusy}
+                  group={groupDrag}
+                  selected={picked}
+                  multi={multi}
+                  // 排隊時不能拖；多選、用手指時只有選起來的能拖；用滑鼠時直接拖
+                  draggable={!queued && (picked || (!multi && !TOUCH))}
+                  pending={isPending(item)}
+                  readCount={readCount(item)}
+                  memberCount={memberCount}
+                  onTap={onTap}
+                  onLongPress={onLongPress}
+                  onOpen={onOpen}
+                  onCommit={onCommit}
+                  onCommitGroup={onCommitGroup}
+                />
+              );
+            }) : null}
           </Animated.View>
         </View>
       </GestureDetector>

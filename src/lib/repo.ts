@@ -39,6 +39,7 @@ import {
   type BoardItem,
   type BoardState,
   type Boards,
+  type EditRequest,
   type GroupInfo,
   type JoinRequest,
   type JoinStatus,
@@ -54,6 +55,8 @@ import {
  *   groups/{邀請碼}/joinRequests/{uid}  name, avatarUrl?, createdAt（等房主同意的加入申請）
  *   groups/{邀請碼}/lineGroups/{LINE 群組 ID}  boundAt, boundBy（綁定的 LINE 群組，只有伺服器能讀寫）
  *   groups/{邀請碼}/items/{id}      BoardItem（白板上的便利貼 / 圖片 / 貼圖 / 公告）
+ *   groups/{邀請碼}/editRequests/{項目 id}_{uid}  itemId, authorId, requesterId, requesterName, createdAt
+ *                                   （想改別人貼的東西，等作者同意；同意後 uid 會加進項目的 editors）
  *   groups/{邀請碼}/alerts/{id}     QuickAlert（快速通報）
  *   groups/{邀請碼}/files/{檔案 id}/chunks/{0、1、2…}  data（Bytes）, uploaderId（附件內容，切成好幾片，
  *                                   每片一份文件；項目上的 files 只記檔名、大小，點開時才下載）
@@ -277,6 +280,7 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
     tags: strList(d.tags),
     authorId: str(d.authorId, ''),
     authorName: str(d.authorName, ''),
+    editors: strList(d.editors),
     // 剛新增、伺服器時間還沒回來時先用本機時間
     createdAt: millis(d.createdAt) ?? Date.now(),
     ackBy: isRecord(d.ackBy) ? d.ackBy : {},
@@ -286,7 +290,7 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
 export const watchItems = (gid: string, cb: (items: BoardItem[]) => void) =>
   onSnapshot(itemsRef(gid), (s) => cb(s.docs.map((d) => toItem(d.id, d.data()))));
 
-export type NewItem = Omit<BoardItem, 'id' | 'createdAt' | 'ackBy'>;
+export type NewItem = Omit<BoardItem, 'id' | 'createdAt' | 'ackBy' | 'editors'>;
 
 const toFirestore = (patch: Partial<BoardItem>) => {
   const { dueAt, ...rest } = patch;
@@ -295,6 +299,8 @@ const toFirestore = (patch: Partial<BoardItem>) => {
   delete data.id;
   delete data.createdAt;
   delete data.ackBy;
+  // 誰能改只能透過作者同意編輯申請（approveEditRequest）加上去
+  delete data.editors;
   // Firestore 不接受 undefined
   for (const key of Object.keys(data)) if (data[key] === undefined) delete data[key];
   return data;
@@ -307,18 +313,110 @@ export const addItem = (gid: string, item: NewItem) =>
 export const moveItem = (gid: string, id: string, geo: Partial<Pick<BoardItem, 'x' | 'y' | 'w' | 'h' | 'z'>>) =>
   updateDoc(doc(itemsRef(gid), id), geo);
 
+/** 多選後一起移動 / 一起移到最上層：同一次寫入，不會有的動了、有的沒動 */
+export async function moveItems(gid: string, moves: { id: string; geo: Partial<Pick<BoardItem, 'x' | 'y' | 'w' | 'h' | 'z'>> }[]) {
+  const batch = writeBatch(db);
+  for (const m of moves) batch.update(doc(itemsRef(gid), m.id), m.geo);
+  await batch.commit();
+}
+
 /** 狀態 / 標籤：任何成員都可以改（像一起整理待辦清單） */
 export const organizeItem = (gid: string, id: string, patch: Partial<Pick<BoardItem, 'status' | 'tags'>>) =>
   updateDoc(doc(itemsRef(gid), id), patch);
 
-/** 內容：只有作者可以改（Firestore 規則也會擋）。resetAcks = 讓大家重新確認 */
+/** 多選後一起整理（每個項目的標籤可能不一樣，所以各自給 patch） */
+export async function organizeItems(gid: string, patches: { id: string; patch: Partial<Pick<BoardItem, 'status' | 'tags'>> }[]) {
+  const batch = writeBatch(db);
+  for (const p of patches) batch.update(doc(itemsRef(gid), p.id), p.patch);
+  await batch.commit();
+}
+
+/** 內容：作者、房主、作者同意過的人可以改（Firestore 規則也會擋）。resetAcks = 讓大家重新確認 */
 export const editItem = (gid: string, id: string, patch: Partial<BoardItem>, resetAcks = false) =>
   updateDoc(doc(itemsRef(gid), id), { ...toFirestore(patch), ...(resetAcks ? { ackBy: {} } : null) });
 
 export const acknowledge = (gid: string, id: string, uid: string) =>
   updateDoc(doc(itemsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });
 
+/** 多選後一次確認好幾則公告 */
+export async function acknowledgeAll(gid: string, ids: string[], uid: string) {
+  const batch = writeBatch(db);
+  for (const id of ids) batch.update(doc(itemsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });
+  await batch.commit();
+}
+
+/** 刪除：作者和房主可以（規則也會擋） */
 export const deleteItem = (gid: string, id: string) => deleteDoc(doc(itemsRef(gid), id));
+
+/** 多選後一起刪掉；只要有一個不能刪，整批都不會刪 */
+export async function deleteItems(gid: string, ids: string[]) {
+  const batch = writeBatch(db);
+  for (const id of ids) batch.delete(doc(itemsRef(gid), id));
+  await batch.commit();
+}
+
+/* ---------- 編輯申請（想改別人貼的東西，要作者同意；房主不用申請） ---------- */
+
+const editRequestsRef = (gid: string) => collection(db, 'groups', gid, 'editRequests');
+
+const toEditRequest = (id: string, d: Record<string, unknown>): EditRequest => ({
+  id,
+  itemId: str(d.itemId, ''),
+  authorId: str(d.authorId, ''),
+  requesterId: str(d.requesterId, ''),
+  requesterName: str(d.requesterName, ''),
+  createdAt: millis(d.createdAt),
+});
+
+/** 送出（或重送）申請：同一個人對同一張只會有一份 */
+export const requestEdit = (gid: string, item: Pick<BoardItem, 'id' | 'authorId'>, uid: string, name: string) =>
+  setDoc(doc(editRequestsRef(gid), `${item.id}_${uid}`), {
+    itemId: item.id,
+    authorId: item.authorId,
+    requesterId: uid,
+    requesterName: name.slice(0, 30),
+    createdAt: serverTimestamp(),
+  });
+
+/**
+ * 跟我有關的編輯申請：別人想改我貼的（incoming）、我想改別人的（outgoing）。
+ * 規則只讓申請的人和作者讀得到，所以分成兩個查詢；兩邊都回來後才第一次通知
+ */
+export function watchEditRequests(
+  gid: string,
+  uid: string,
+  cb: (requests: { incoming: EditRequest[]; outgoing: EditRequest[] }) => void,
+) {
+  const lists: (EditRequest[] | undefined)[] = [undefined, undefined];
+  const emit = () => {
+    const [incoming, outgoing] = lists;
+    if (incoming && outgoing) cb({ incoming, outgoing });
+  };
+  const unsubs = (['authorId', 'requesterId'] as const).map((field, i) =>
+    onSnapshot(
+      query(editRequestsRef(gid), where(field, '==', uid)),
+      (s) => {
+        lists[i] = s.docs
+          .map((d) => toEditRequest(d.id, d.data()))
+          .sort((a, b) => (a.createdAt ?? Infinity) - (b.createdAt ?? Infinity));
+        emit();
+      },
+      (e) => console.warn('讀取編輯申請失敗', gid, e),
+    ),
+  );
+  return () => unsubs.forEach((u) => u());
+}
+
+/** 作者同意：把申請的人加進可以改的名單、刪掉申請（同一次寫入） */
+export async function approveEditRequest(gid: string, req: EditRequest) {
+  const batch = writeBatch(db);
+  batch.update(doc(itemsRef(gid), req.itemId), { editors: arrayUnion(req.requesterId) });
+  batch.delete(doc(editRequestsRef(gid), req.id));
+  await batch.commit();
+}
+
+/** 作者拒絕、申請的人收回、或項目已經刪掉了 */
+export const removeEditRequest = (gid: string, id: string) => deleteDoc(doc(editRequestsRef(gid), id));
 
 /* ---------- 附件內容（切片存放，點開時才下載） ---------- */
 
@@ -498,13 +596,21 @@ export const savePushToken = (gid: string, uid: string, token: string | null, os
     token ? { pushToken: token, pushOS: os } : { pushToken: deleteField(), pushOS: deleteField() },
   );
 
+const toRecipient = (data: Record<string, unknown> | undefined): PushRecipient | null => {
+  if (typeof data?.pushToken !== 'string') return null;
+  const os: PushOS | null = data.pushOS === 'ios' || data.pushOS === 'android' ? data.pushOS : null;
+  return { token: data.pushToken, os };
+};
+
 /** 群組裡其他人的推播代碼（自己不用通知自己） */
 export async function fetchPushRecipients(gid: string, exceptUid: string): Promise<PushRecipient[]> {
   const snap = await getDocs(membersRef(gid));
   return snap.docs.flatMap((d) => {
-    const data = d.data();
-    if (d.id === exceptUid || typeof data.pushToken !== 'string') return [];
-    const os: PushOS | null = data.pushOS === 'ios' || data.pushOS === 'android' ? data.pushOS : null;
-    return [{ token: data.pushToken, os }];
+    const r = d.id === exceptUid ? null : toRecipient(d.data());
+    return r ? [r] : [];
   });
 }
+
+/** 只通知某一個人（例如編輯申請）；對方沒開通知就是 null */
+export const fetchPushRecipient = async (gid: string, uid: string) =>
+  toRecipient((await getDoc(doc(membersRef(gid), uid))).data());

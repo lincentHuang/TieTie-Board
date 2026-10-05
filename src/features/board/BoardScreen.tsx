@@ -2,11 +2,11 @@ import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { askConfirm, showError } from '@/components/dialogs';
+import { askConfirm, showError, showNotice } from '@/components/dialogs';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { C, F, Ionicons, Squishy, type IconName } from '@/components/ui';
 import { AlertOverlay } from '@/features/alerts/AlertOverlay';
-import { notifyBoardChange } from '@/features/alerts/notify';
+import { notifyBoardChange, notifyPerson } from '@/features/alerts/notify';
 import { QuickAlertSheet } from '@/features/alerts/QuickAlertSheet';
 import { usePushRegistration } from '@/features/alerts/usePushRegistration';
 import { FilesSheet } from '@/features/files/FilesSheet';
@@ -18,11 +18,27 @@ import { BoardSwitcherSheet } from '@/features/setup/BoardSwitcherSheet';
 import { useWidgetSync } from '@/features/widgets/useWidgetSync';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { pickImage } from '@/lib/images';
-import { acknowledge, addItem, deleteItem, editItem, leaveGroup, moveItem, organizeItem } from '@/lib/repo';
+import {
+  acknowledge,
+  acknowledgeAll,
+  addItem,
+  deleteItem,
+  deleteItems,
+  editItem,
+  leaveGroup,
+  moveItem,
+  moveItems,
+  organizeItem,
+  organizeItems,
+  removeEditRequest,
+  requestEdit,
+} from '@/lib/repo';
 import { useSession } from '@/lib/session';
 import { useBoardDigests } from '@/lib/use-board-digests';
 import {
   byUrgency,
+  canDeleteItem,
+  canEditItem,
   isAckedBy,
   isAnnouncement,
   itemTitle,
@@ -39,17 +55,21 @@ import { useNow } from '@/lib/use-now';
 
 import { AnnouncementsSheet } from './AnnouncementsSheet';
 import { Canvas, type CanvasHandle } from './Canvas';
+import { EditRequestBanner } from './EditRequestBanner';
 import { InviteSheet } from './InviteSheet';
 import { ItemEditor, type Draft } from './ItemEditor';
-import { OrganizeSheet } from './Organize';
+import { OrganizeManySheet, OrganizeSheet } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
 import { useBoard } from './useBoard';
+import { useEditRequests } from './useEditRequests';
 import { useJoinRequests } from './useJoinRequests';
+import { useSelection } from './useSelection';
 import { useViewPrefs } from './useViewPrefs';
 
 type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number } };
 type Panel = 'none' | 'stickers' | 'announcements' | 'invite' | 'boards' | 'alert' | 'settings';
+type ToolDef = { icon: IconName; label: string; color: string; onPress: () => void };
 
 const TOOLBAR_HEIGHT = 76;
 /** 便利貼有照片時多長高一點，文字才不會被照片擠扁 */
@@ -76,6 +96,8 @@ export function BoardScreen({
   const isOwner = ownerId === uid;
   // 房主才有：等我同意的加入申請
   const requests = useJoinRequests(gid, isOwner);
+  // 別人想改我貼的、我想改別人的
+  const editRequests = useEditRequests(gid, uid, items);
   // 所有加入的公布欄（不只目前這個）：給桌面小工具與快速通報用
   const digests = useBoardDigests(session.groupIds);
   useWidgetSync(digests, uid, gid);
@@ -83,10 +105,10 @@ export function BoardScreen({
   const canvas = useRef<CanvasHandle>(null);
   const now = useNow();
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const sel = useSelection();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [panel, setPanel] = useState<Panel>('none');
-  const [organizingId, setOrganizingId] = useState<string | null>(null);
+  const [organizingIds, setOrganizingIds] = useState<string[] | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [filesId, setFilesId] = useState<string | null>(null);
   const { prefs, setQueued, setGroup } = useViewPrefs();
@@ -101,14 +123,22 @@ export function BoardScreen({
   }
 
   const { queued } = prefs;
-  const selected = items.find((i) => i.id === selectedId) ?? null;
-  const organizing = items.find((i) => i.id === organizingId) ?? null;
+  // 被別人刪掉的項目自動不算在選取裡
+  const selection = items.filter((i) => sel.ids.includes(i.id));
+  const multi = sel.multi && selection.length > 0;
+  const selected = multi ? null : (selection[0] ?? null);
+  const organizing = organizingIds ? items.filter((i) => organizingIds.includes(i.id)) : [];
+  const editingItem = editing?.id ? items.find((i) => i.id === editing.id) : undefined;
+  const canEdit = (item: BoardItem) => canEditItem(item, uid, ownerId);
+  const canDelete = (item: BoardItem) => canDeleteItem(item, uid, ownerId);
+  const askedFor = (item: BoardItem) => editRequests.outgoing.find((r) => r.itemId === item.id);
+  const unacked = (list: BoardItem[]) => list.filter((i) => isAnnouncement(i) && !isAckedBy(i, uid));
   const viewing = items.find((i) => i.id === viewingId);
   const viewingPhotos = viewing ? viewablePhotos(viewing) : [];
   const filesOf = items.find((i) => i.id === filesId);
   const allTags = tagsInUse(items).map((t) => t.tag);
   const maxZ = items.reduce((m, i) => Math.max(m, i.z), 0);
-  const pending = items.filter((i) => isAnnouncement(i) && !isAckedBy(i, uid)).sort(byUrgency(uid));
+  const pending = unacked(items).sort(byUrgency(uid));
   const nextEvent = items
     .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null && i.dueAt > now)
     .sort((a, b) => a.dueAt - b.dueAt)[0];
@@ -116,6 +146,8 @@ export function BoardScreen({
   const unreadOf = (memberUid: string) => items.filter((i) => isAnnouncement(i) && !isAckedBy(i, memberUid)).length;
 
   const ack = (item: BoardItem) => acknowledge(gid, item.id, uid).catch((e) => showError('確認失敗', e));
+  const ackMany = (list: BoardItem[]) =>
+    acknowledgeAll(gid, list.map((i) => i.id), uid).catch((e) => showError('確認失敗', e));
 
   /** 公告 / 活動有變化時，讓其他人的桌面小工具跟著更新（新公告會跳通知） */
   const pushCtx = { gid, uid, boardName: groupName, authorName: session.nickname ?? '' };
@@ -216,14 +248,36 @@ export function BoardScreen({
     }
   };
 
+  /** 想改別人貼的東西：請作者同意（已經送出的話，問要不要收回） */
+  const askEdit = async (item: BoardItem) => {
+    const author = item.authorName || '作者';
+    const title = itemTitle(item);
+    const mine = askedFor(item);
+    if (mine) {
+      if (!(await askConfirm('收回修改申請？', `還在等 ${author} 同意你修改「${title}」。`))) return;
+      removeEditRequest(gid, mine.id).catch((e) => showError('收回失敗', e));
+      return;
+    }
+    if (!(await askConfirm(`請 ${author} 同意你修改？`, `「${title}」是 ${author} 貼的，${author} 同意之後你就能修改。`))) return;
+    try {
+      const me = session.nickname || '有人';
+      await requestEdit(gid, item, uid, me);
+      notifyPerson(gid, item.authorId, `✏️ ${groupName}`, `${me} 想修改你貼的「${title}」`);
+      showNotice('已經送出', `${author} 同意之後，你就能修改了。`);
+    } catch (e) {
+      showError('送出失敗', e);
+    }
+  };
+
   const open = (id: string) => {
     const item = items.find((i) => i.id === id);
     if (!item || item.type === 'sticker') return;
-    if (item.authorId !== uid) {
-      // 別人的東西不能改內容：有附件就打開附件，有照片就全螢幕看照片，是公告就打開確認面板
+    if (!canEdit(item)) {
+      // 不能改內容：有附件就打開附件，有照片就全螢幕看照片，是公告就打開確認面板，都沒有就問要不要請作者同意
       if (item.files.length) setFilesId(id);
       else if (viewablePhotos(item).length) setViewingId(id);
       else if (isAnnouncement(item)) setPanel('announcements');
+      else askEdit(item);
       return;
     }
     const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, status, tags } = item;
@@ -261,17 +315,56 @@ export function BoardScreen({
     moveItem(gid, id, geo).catch((e) => showError('移動失敗', e));
   };
 
-  const bringToFront = (item: BoardItem) =>
-    moveItem(gid, item.id, { z: maxZ + 1 }).catch((e) => showError('調整圖層失敗', e));
+  /** 多選時整批一起拖完：每一個都移動一樣多 */
+  const commitGroup = (dx: number, dy: number) => {
+    moveItems(gid, selection.map((i) => ({ id: i.id, geo: { x: i.x + dx, y: i.y + dy } }))).catch((e) =>
+      showError('移動失敗', e),
+    );
+  };
+
+  /** 移到最上層；好幾個的話保持原本彼此的上下順序 */
+  const bringToFront = (list: BoardItem[]) =>
+    moveItems(
+      gid,
+      [...list].sort((a, b) => a.z - b.z).map((i, k) => ({ id: i.id, geo: { z: maxZ + 1 + k } })),
+    ).catch((e) => showError('調整圖層失敗', e));
+
+  /** 刪掉之後，別人對這些項目的修改申請也沒用了（我是作者的才讀得到、刪得掉） */
+  const dropEditRequests = (ids: string[]) => {
+    for (const r of editRequests.incoming.filter((r) => ids.includes(r.itemId))) {
+      removeEditRequest(gid, r.id).catch((e) => console.warn('清除修改申請失敗', e));
+    }
+  };
 
   const remove = async (item: BoardItem) => {
     if (!(await askConfirm('刪除這個項目？', itemTitle(item)))) return;
     try {
       await deleteItem(gid, item.id);
       discardFiles(gid, item.files);
+      dropEditRequests([item.id]);
       notifyBoardChange(pushCtx, item, null);
-      setSelectedId(null);
+      sel.clear();
       setEditing(null);
+    } catch (e) {
+      showError('刪除失敗', e);
+    }
+  };
+
+  /** 多選刪除：只刪自己貼的（房主可以刪全部），別人的留著 */
+  const removeMany = async (list: BoardItem[]) => {
+    const ok = list.filter(canDelete);
+    const skipped = list.length - ok.length;
+    const titles = ok.slice(0, 3).map(itemTitle).join('、') + (ok.length > 3 ? ` 等 ${ok.length} 個` : '');
+    const note = skipped ? `\n另外 ${skipped} 個是別人貼的，不會刪掉。` : '';
+    if (!(await askConfirm(`刪除 ${ok.length} 個項目？`, titles + note))) return;
+    try {
+      await deleteItems(gid, ok.map((i) => i.id));
+      for (const i of ok) discardFiles(gid, i.files);
+      dropEditRequests(ok.map((i) => i.id));
+      // 小工具上的東西不見了：通知一次讓大家的小工具更新就好
+      const onWidget = ok.find((i) => isAnnouncement(i) || i.dueAt !== null);
+      if (onWidget) notifyBoardChange(pushCtx, onWidget, null);
+      sel.clear();
     } catch (e) {
       showError('刪除失敗', e);
     }
@@ -290,11 +383,50 @@ export function BoardScreen({
 
   const locate = (item: BoardItem) => {
     setPanel('none');
-    setSelectedId(item.id);
+    sel.only(item.id);
     canvas.current?.focus(item.id);
   };
 
   const toolbarBottom = Math.max(insets.bottom, 12);
+
+  // 底部工具列：沒選取時是新增工具，選一個時是項目操作，多選時是批次操作
+  const pick = (list: (ToolDef | false)[]) => list.filter((t): t is ToolDef => t !== false);
+  const done: ToolDef = { icon: 'close', label: '完成', color: C.sub, onPress: sel.clear };
+  const tools = multi
+    ? pick([
+        unacked(selection).length > 0 && {
+          icon: 'checkmark',
+          label: '我知道了',
+          color: C.ok,
+          onPress: () => ackMany(unacked(selection)),
+        },
+        { icon: 'pricetags', label: '整理', color: C.mint, onPress: () => setOrganizingIds(selection.map((i) => i.id)) },
+        !queued && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront(selection) },
+        selection.some(canDelete) && { icon: 'trash', label: '刪除', color: C.urgent, onPress: () => removeMany(selection) },
+        done,
+      ])
+    : selected
+      ? pick([
+          unacked([selected]).length > 0 && { icon: 'checkmark', label: '我知道了', color: C.ok, onPress: () => ack(selected) },
+          selected.type !== 'sticker' &&
+            (canEdit(selected)
+              ? { icon: 'create', label: '編輯', color: C.sky, onPress: () => open(selected.id) }
+              : askedFor(selected)
+                ? { icon: 'hourglass', label: '等待同意', color: C.sub, onPress: () => askEdit(selected) }
+                : { icon: 'hand-right', label: '請求編輯', color: C.sky, onPress: () => askEdit(selected) }),
+          !canEdit(selected) &&
+            selected.files.length > 0 && { icon: 'attach', label: '檔案', color: C.lavender, onPress: () => setFilesId(selected.id) },
+          { icon: 'pricetags', label: '整理', color: C.mint, onPress: () => setOrganizingIds([selected.id]) },
+          !queued && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront([selected]) },
+          canDelete(selected) && { icon: 'trash', label: '刪除', color: C.urgent, onPress: () => remove(selected) },
+          done,
+        ])
+      : pick([
+          { icon: 'document-text', label: '便利貼', color: '#F5B800', onPress: () => startNote(false) },
+          { icon: 'megaphone', label: '公告', color: C.primary, onPress: () => startNote(true) },
+          { icon: 'image', label: '照片', color: C.sky, onPress: startImage },
+          { icon: 'happy', label: '貼圖', color: C.mint, onPress: () => setPanel('stickers') },
+        ]);
 
   return (
     <View style={[s.screen, { paddingTop: insets.top }]}>
@@ -339,6 +471,16 @@ export function BoardScreen({
         onOpenBoard={(target) => session.switchGroup(target).catch((e) => showError('切換失敗', e))}
       />
 
+      {/* 有人想改我貼的東西：等我同意 */}
+      <EditRequestBanner
+        gid={gid}
+        boardName={groupName}
+        myName={session.nickname ?? ''}
+        requests={editRequests.incoming}
+        items={items}
+        onLocate={locate}
+      />
+
       {/* 最重要的事：沒確認的公告 > 下一個行程 */}
       {pending.length > 0 ? (
         <Squishy
@@ -376,57 +518,53 @@ export function BoardScreen({
         onChangeMode={setQueued}
         group={prefs.group}
         onChangeGroup={setGroup}
-        selectedId={selectedId}
+        selectedIds={selection.map((i) => i.id)}
+        multi={multi}
         isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
         readCount={readCount}
         memberCount={members.length}
-        onSelect={setSelectedId}
+        onTap={sel.tap}
+        onLongPress={sel.longPress}
+        onClear={sel.clear}
+        onHide={sel.drop}
         onOpen={open}
         onCommit={commit}
+        onCommitGroup={commitGroup}
       />
 
       {items.length === 0 ? (
         <View pointerEvents="none" style={s.emptyHint}>
           <Text style={s.emptyTitle}>白板空空的～</Text>
           <Text style={s.emptySub}>
-            用下面的工具貼上便利貼、公告或照片{'\n'}拖曳移動・拖四個角調整大小・點兩下編輯
+            用下面的工具貼上便利貼、公告或照片{'\n'}點一下選起來再拖曳・長按可以多選・點兩下編輯
           </Text>
         </View>
       ) : null}
 
-      {/* 手機網頁版：提醒把公布欄裝到手機（按掉一週內不再出現，設定裡一直找得到） */}
-      <InstallBanner bottom={toolbarBottom + TOOLBAR_HEIGHT + 12} onOpen={() => setPanel('settings')} />
+      {/* 手機網頁版：提醒把公布欄裝到手機（按掉一週內不再出現，設定裡一直找得到）；多選時讓位給選取列 */}
+      {multi ? null : <InstallBanner bottom={toolbarBottom + TOOLBAR_HEIGHT + 12} onOpen={() => setPanel('settings')} />}
 
-      {/* 底部工具列：沒選取時是新增工具，選取時變成項目操作 */}
       <View style={[s.toolbarWrap, { paddingBottom: toolbarBottom }]} pointerEvents="box-none">
+        {multi ? (
+          <View style={s.multiBar}>
+            <Text style={s.multiText}>
+              已選 {selection.length} 個{queued ? '' : '・拖曳任一個一起移動'}
+            </Text>
+            {selection.length < items.length ? (
+              <Pressable
+                onPress={() => sel.selectAll(canvas.current?.visibleIds() ?? [])}
+                hitSlop={8}
+                accessibilityLabel="全選"
+                style={({ pressed }) => [s.multiAll, pressed && { opacity: 0.6 }]}>
+                <Text style={s.multiAllText}>全選</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         <View style={s.toolbar}>
-          {selected ? (
-            <>
-              {isAnnouncement(selected) && !isAckedBy(selected, uid) ? (
-                <Tool icon="checkmark" label="我知道了" color={C.ok} onPress={() => ack(selected)} />
-              ) : null}
-              {selected.authorId === uid && selected.type !== 'sticker' ? (
-                <Tool icon="create" label="編輯" color={C.sky} onPress={() => open(selected.id)} />
-              ) : selected.files.length ? (
-                <Tool icon="attach" label="檔案" color={C.lavender} onPress={() => setFilesId(selected.id)} />
-              ) : null}
-              <Tool icon="pricetags" label="整理" color={C.mint} onPress={() => setOrganizingId(selected.id)} />
-              {queued ? null : (
-                <Tool icon="layers" label="最上層" color={C.lavender} onPress={() => bringToFront(selected)} />
-              )}
-              {selected.authorId === uid ? (
-                <Tool icon="trash" label="刪除" color={C.urgent} onPress={() => remove(selected)} />
-              ) : null}
-              <Tool icon="close" label="完成" color={C.sub} onPress={() => setSelectedId(null)} />
-            </>
-          ) : (
-            <>
-              <Tool icon="document-text" label="便利貼" color="#F5B800" onPress={() => startNote(false)} />
-              <Tool icon="megaphone" label="公告" color={C.primary} onPress={() => startNote(true)} />
-              <Tool icon="image" label="照片" color={C.sky} onPress={startImage} />
-              <Tool icon="happy" label="貼圖" color={C.mint} onPress={() => setPanel('stickers')} />
-            </>
-          )}
+          {tools.map((t) => (
+            <Tool key={t.label} {...t} compact={tools.length > 5} />
+          ))}
         </View>
       </View>
 
@@ -437,7 +575,7 @@ export function BoardScreen({
           isNew={editing.id === null}
           tagSuggestions={allTags}
           onClose={() => setEditing(null)}
-          onDelete={editing.id ? () => remove(items.find((i) => i.id === editing.id)!) : undefined}
+          onDelete={editingItem && canDelete(editingItem) ? () => remove(editingItem) : undefined}
           onSave={async (draft, uploads, onProgress) => {
             // 新檔案先傳上去，項目上才記檔名；傳到一半失敗就整個不存，編輯畫面留著可以再按一次
             await uploadFiles(gid, uid, uploads, onProgress);
@@ -451,12 +589,19 @@ export function BoardScreen({
           }}
         />
       ) : null}
-      {organizing ? (
+      {organizing.length === 1 ? (
         <OrganizeSheet
-          item={organizing}
+          item={organizing[0]}
           suggestions={allTags}
-          onChange={(patch) => organizeItem(gid, organizing.id, patch).catch((e) => showError('整理失敗', e))}
-          onClose={() => setOrganizingId(null)}
+          onChange={(patch) => organizeItem(gid, organizing[0].id, patch).catch((e) => showError('整理失敗', e))}
+          onClose={() => setOrganizingIds(null)}
+        />
+      ) : organizing.length > 1 ? (
+        <OrganizeManySheet
+          items={organizing}
+          suggestions={allTags}
+          onChange={(patches) => organizeItems(gid, patches).catch((e) => showError('整理失敗', e))}
+          onClose={() => setOrganizingIds(null)}
         />
       ) : null}
       {viewing && viewingPhotos.length ? (
@@ -574,9 +719,10 @@ function MemberRow({
   );
 }
 
-function Tool({ icon, label, color, onPress }: { icon: IconName; label: string; color: string; onPress: () => void }) {
+/** compact：工具比較多（六個）時縮窄一點，手機直放才排得下 */
+function Tool({ icon, label, color, onPress, compact }: ToolDef & { compact: boolean }) {
   return (
-    <Squishy onPress={onPress} style={s.tool} accessibilityLabel={label}>
+    <Squishy onPress={onPress} style={[s.tool, compact && s.toolCompact]} accessibilityLabel={label}>
       <View style={[s.toolIcon, { backgroundColor: color + '26' }]}>
         <Ionicons name={icon} size={22} color={color} />
       </View>
@@ -682,6 +828,21 @@ const s = StyleSheet.create({
     elevation: 8,
   },
   tool: { alignItems: 'center', justifyContent: 'center', minWidth: 64, paddingHorizontal: 4 },
+  toolCompact: { minWidth: 54, paddingHorizontal: 1 },
+  multiBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+    paddingLeft: 16,
+    paddingRight: 6,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: C.ink,
+  },
+  multiText: { fontSize: 14, fontFamily: F.display, color: '#FFF' },
+  multiAll: { backgroundColor: '#FFFFFF26', borderRadius: 14, paddingHorizontal: 12, height: 28, justifyContent: 'center' },
+  multiAllText: { fontSize: 14, fontFamily: F.display, color: '#FFF' },
   toolIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 12, fontFamily: F.display, color: C.ink, marginTop: 3 },
 });

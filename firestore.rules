@@ -34,6 +34,24 @@ service cloud.firestore {
       return !('files' in d) || (d.files is list && d.files.size() <= 5);
     }
 
+    // 作者同意可以改內容的人：可以沒有（舊資料、沒人申請過），有的話是名單
+    function validEditors(d) {
+      return !('editors' in d) || (d.editors is list && d.editors.size() <= 50);
+    }
+
+    // 房主、作者同意過的人改別人的項目：可以改內容、位置、狀態標籤；
+    // 不能改作者、類型、建立時間、誰能改（editors 只有作者能加）；ackBy 只能清空（改了公告，大家要重新確認）
+    function validContentEdit() {
+      return onlyChanges(['x', 'y', 'w', 'h', 'z', 'text', 'color', 'fontSize', 'imageData', 'photos', 'carousel',
+          'files', 'priority', 'dueAt', 'status', 'tags', 'ackBy'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ackBy'])
+          || request.resource.data.ackBy == {})
+        && request.resource.data.priority in ['none', 'important', 'urgent']
+        && validOrganize(request.resource.data)
+        && validPhotos(request.resource.data)
+        && validFiles(request.resource.data);
+    }
+
     // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE / Google 的大頭貼網址（會顯示在每個人的畫面上）
     function validAvatar(d) {
       return !('avatarUrl' in d)
@@ -133,14 +151,36 @@ service cloud.firestore {
       }
 
       // 附件內容：一個檔案切成好幾片（每片最多 900KB、最多 12 片 ≈ 10MB），成員才讀得到。
-      // 只能用自己的名義上傳；上傳的人（就是項目作者）可以重傳、刪掉。缺片（沒傳完）也能刪，清得乾淨
+      // 只能用自己的名義上傳；上傳的人可以重傳、刪掉，房主（可以刪任何項目）也能刪。缺片（沒傳完）也能刪，清得乾淨
       match /files/{fileId}/chunks/{index} {
         allow read: if signedIn() && isMember(gid);
 
         allow create: if signedIn() && isMember(gid) && validChunk(index, request.resource.data);
         allow update: if signedIn() && isMember(gid) && resource.data.uploaderId == request.auth.uid
           && validChunk(index, request.resource.data);
-        allow delete: if signedIn() && (resource == null || resource.data.uploaderId == request.auth.uid);
+        allow delete: if signedIn()
+          && (resource == null || resource.data.uploaderId == request.auth.uid || isOwner(gid));
+      }
+
+      // 編輯申請：想改別人貼的東西，要作者同意（房主可以直接改，不用申請）。
+      // 只能用自己的名義申請，對象一定是那個項目真正的作者；作者同意（加進 editors）或拒絕，申請的人可以收回
+      match /editRequests/{reqId} {
+        allow read: if signedIn() && isMember(gid)
+          && (resource.data.requesterId == request.auth.uid || resource.data.authorId == request.auth.uid);
+
+        allow create, update: if signedIn() && isMember(gid)
+          && request.resource.data.keys().hasOnly(['itemId', 'authorId', 'requesterId', 'requesterName', 'createdAt'])
+          && request.resource.data.itemId is string
+          && reqId == request.resource.data.itemId + '_' + request.auth.uid
+          && request.resource.data.requesterId == request.auth.uid
+          && request.resource.data.authorId != request.auth.uid
+          && request.resource.data.authorId
+            == get(/databases/$(database)/documents/groups/$(gid)/items/$(request.resource.data.itemId)).data.authorId
+          && request.resource.data.requesterName is string && request.resource.data.requesterName.size() <= 30
+          && request.resource.data.createdAt == request.time;
+
+        allow delete: if signedIn()
+          && (resource.data.requesterId == request.auth.uid || resource.data.authorId == request.auth.uid);
       }
 
       match /items/{itemId} {
@@ -151,16 +191,25 @@ service cloud.firestore {
           && request.resource.data.type in ['note', 'image', 'sticker']
           && request.resource.data.priority in ['none', 'important', 'urgent']
           && request.resource.data.ackBy == {}
+          && (!('editors' in request.resource.data) || request.resource.data.editors == [])
           && validOrganize(request.resource.data)
           && validPhotos(request.resource.data)
           && validFiles(request.resource.data);
 
-        // 作者：可以改內容、刪除
+        // 作者：可以改內容、刪除，也可以同意別人來改（加進 editors）
         allow update: if signedIn() && resource.data.authorId == request.auth.uid
           && validOrganize(request.resource.data)
           && validPhotos(request.resource.data)
-          && validFiles(request.resource.data);
-        allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+          && validFiles(request.resource.data)
+          && validEditors(request.resource.data);
+
+        // 房主：可以改所有人的內容；作者同意過的人（editors）：可以改那一張的內容
+        allow update: if signedIn() && isMember(gid)
+          && (isOwner(gid) || request.auth.uid in resource.data.get('editors', []))
+          && validContentEdit();
+
+        // 作者和房主可以刪除
+        allow delete: if signedIn() && (resource.data.authorId == request.auth.uid || isOwner(gid));
 
         // 其他成員：可以移動 / 調整大小 / 調整圖層（像 Figma 共同編輯），也可以改狀態、標籤
         allow update: if signedIn() && isMember(gid)

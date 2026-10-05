@@ -136,7 +136,8 @@ export function Segmented<T extends string>({
   options,
   onChange,
 }: {
-  value: T;
+  /** null = 一個都沒選（例如多選時大家的狀態不一樣） */
+  value: T | null;
   options: { value: T; label: string; color?: string }[];
   onChange: (v: T) => void;
 }) {
