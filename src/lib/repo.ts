@@ -30,10 +30,13 @@ import { db } from './firebase';
 import {
   ALERT_LEVELS,
   chunkCount,
+  MAX_ALERT_PRESETS,
+  MAX_ALERT_TEXT,
   FILE_CHUNK_BYTES,
   ITEM_TYPES,
   PRIORITIES,
   STATUSES,
+  type AlertPreset,
   type Attachment,
   type BoardDigest,
   type BoardItem,
@@ -63,6 +66,7 @@ import {
  *   lineAccounts/{LINE 使用者 ID}   uid（LINE 帳號對應的成員身分，只有伺服器 /api/line-login 能讀寫）
  *   users/{uid}                     groupIds, pendingIds, updatedAt（帳號上記的公布欄清單，換裝置登入同一個帳號也找得回來；
  *                                   只是索引，讀不讀得到公布欄還是看 members）
+ *   users/{uid}/settings/quickAlerts  presets, updatedAt（自己的快速通報按鈕；沒有這份文件 = 用預設的按鈕）
  */
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易看錯的 0/O/1/I
 
@@ -72,6 +76,7 @@ const membersRef = (gid: string) => collection(db, 'groups', gid, 'members');
 const alertsRef = (gid: string) => collection(db, 'groups', gid, 'alerts');
 const joinRequestsRef = (gid: string) => collection(db, 'groups', gid, 'joinRequests');
 const accountRef = (uid: string) => doc(db, 'users', uid);
+const alertPresetsRef = (uid: string) => doc(db, 'users', uid, 'settings', 'quickAlerts');
 const chunkRef = (gid: string, fileId: string, index: number) =>
   doc(db, 'groups', gid, 'files', fileId, 'chunks', String(index));
 
@@ -493,6 +498,40 @@ export const addAlert = (gid: string, alert: NewAlert) =>
 /** 按「收到」：每個人只能幫自己按 */
 export const ackAlert = (gid: string, id: string, uid: string) =>
   updateDoc(doc(alertsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });
+
+/** 收回通報：只有發的人可以（Firestore 規則把關） */
+export const deleteAlert = (gid: string, id: string) => deleteDoc(doc(alertsRef(gid), id));
+
+function toAlertPresets(v: unknown): AlertPreset[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter(isRecord)
+    .map((p, i) => ({
+      id: str(p.id, `p${i}`),
+      emoji: str(p.emoji, '📣').slice(0, 16),
+      text: str(p.text, '').slice(0, MAX_ALERT_TEXT),
+      level: oneOf(ALERT_LEVELS, p.level, 'normal'),
+    }))
+    .filter((p) => p.text.trim().length > 0)
+    .slice(0, MAX_ALERT_PRESETS);
+}
+
+/** 即時訂閱自己的快速通報按鈕；null = 還沒自己設定過（用預設的） */
+export const watchAlertPresets = (
+  uid: string,
+  cb: (presets: AlertPreset[] | null) => void,
+  onError: (e: unknown) => void,
+) => onSnapshot(alertPresetsRef(uid), (s) => cb(s.exists() ? toAlertPresets(s.data().presets) : null), onError);
+
+/** 存下整組按鈕（順序就是畫面上的順序） */
+export const saveAlertPresets = (uid: string, presets: AlertPreset[]) =>
+  setDoc(alertPresetsRef(uid), {
+    presets: presets.slice(0, MAX_ALERT_PRESETS).map(({ id, emoji, text, level }) => ({ id, emoji, text, level })),
+    updatedAt: serverTimestamp(),
+  });
+
+/** 恢復預設的按鈕：把自己的設定刪掉 */
+export const resetAlertPresets = (uid: string) => deleteDoc(alertPresetsRef(uid));
 
 /* ---------- 公布欄摘要（桌面小工具、通報用） ---------- */
 

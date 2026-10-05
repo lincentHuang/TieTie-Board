@@ -164,6 +164,22 @@ export interface QuickAlert {
   ackBy: Record<string, unknown>;
 }
 
+/** 快速通報的按鈕（模組）：每個人自己設定、跟著帳號走，按一下就用這句話通報 */
+export interface AlertPreset {
+  /** 本機產生，只用來分辨是哪一顆 */
+  id: string;
+  emoji: string;
+  text: string;
+  level: AlertLevel;
+}
+
+/** 最多幾顆快速通報按鈕（Firestore 規則也會擋） */
+export const MAX_ALERT_PRESETS = 12;
+
+/** 這則通報是不是用這顆按鈕發的（通報上沒記按鈕，用表情和文字比對） */
+export const isFromPreset = (alert: Pick<QuickAlert, 'emoji' | 'text'>, preset: Pick<AlertPreset, 'emoji' | 'text'>) =>
+  alert.text === preset.text && alert.emoji === preset.emoji;
+
 /** 通報在 App 與小工具上停留多久（之後就當作過去了） */
 export const ALERT_TTL = 30 * 60_000;
 export const MAX_ALERT_TEXT = 40;

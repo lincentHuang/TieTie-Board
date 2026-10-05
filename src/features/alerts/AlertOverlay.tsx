@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -16,6 +16,8 @@ import { timeAgo } from '@/lib/dates';
 import { ackAlert } from '@/lib/repo';
 import { isAlertActive, isAlertForMe, type BoardDigest, type QuickAlert } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
+
+import { recallQuickAlert } from './notify';
 
 type Incoming = QuickAlert & { gid: string; boardName: string };
 
@@ -40,7 +42,19 @@ export function AlertOverlay({
   const now = useNow(15_000);
   /** 自己的通報膠囊按掉之後就不再顯示 */
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const [recalling, setRecalling] = useState<string | null>(null);
   if (!digests) return null;
+
+  const recall = async (alert: QuickAlert) => {
+    setRecalling(alert.id);
+    try {
+      await recallQuickAlert(gid, alert.id, uid);
+    } catch (e) {
+      showError('收回失敗', e);
+    } finally {
+      setRecalling(null);
+    }
+  };
 
   const incoming: Incoming[] = digests
     .flatMap((d) => d.alerts.filter((a) => isAlertForMe(a, uid, now)).map((a) => ({ ...a, gid: d.gid, boardName: d.name })))
@@ -72,6 +86,18 @@ export function AlertOverlay({
         <Text style={s.mineText} numberOfLines={1}>
           📣 已通報「{mine.text}」{others > 0 ? `・${acked}/${others} 人收到` : ''}
         </Text>
+        {/* 送錯了：再點一下收回，大家的通報卡片和小工具都會恢復 */}
+        <Squishy
+          onPress={() => recall(mine)}
+          disabled={recalling !== null}
+          style={s.recall}
+          accessibilityLabel={`收回通報：${mine.text}`}>
+          {recalling === mine.id ? (
+            <ActivityIndicator size="small" color={C.urgent} />
+          ) : (
+            <Text style={s.recallText}>收回</Text>
+          )}
+        </Squishy>
         <Squishy onPress={() => setDismissed((d) => [...d, mine.id])} accessibilityLabel="收起通報狀態">
           <Ionicons name="close" size={18} color={C.sub} />
         </Squishy>
@@ -187,4 +213,6 @@ const s = StyleSheet.create({
     borderColor: '#FFC2D6',
   },
   mineText: { flexShrink: 1, fontFamily: F.display, fontSize: 14, color: C.ink },
+  recall: { minWidth: 48, height: 26, borderRadius: 13, paddingHorizontal: 10, backgroundColor: '#FFE8EB', alignItems: 'center', justifyContent: 'center' },
+  recallText: { fontFamily: F.display, fontSize: 13, color: C.urgent },
 });

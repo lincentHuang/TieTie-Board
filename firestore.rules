@@ -89,6 +89,15 @@ service cloud.firestore {
         && request.resource.data.groupIds is list && request.resource.data.groupIds.size() <= 100
         && request.resource.data.pendingIds is list && request.resource.data.pendingIds.size() <= 100
         && request.resource.data.updatedAt == request.time;
+
+      // 自己的快速通報按鈕（最多 12 顆）：只有自己能讀寫；刪掉 = 恢復預設的按鈕
+      match /settings/quickAlerts {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['presets', 'updatedAt'])
+          && request.resource.data.presets is list && request.resource.data.presets.size() <= 12
+          && request.resource.data.updatedAt == request.time;
+      }
     }
 
     match /groups/{gid} {

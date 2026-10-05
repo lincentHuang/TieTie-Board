@@ -40,6 +40,7 @@ import {
   canDeleteItem,
   canEditItem,
   isAckedBy,
+  isAlertActive,
   isAnnouncement,
   itemTitle,
   NOTE_COLORS,
@@ -58,6 +59,7 @@ import { Canvas, type CanvasHandle } from './Canvas';
 import { EditRequestBanner } from './EditRequestBanner';
 import { InviteSheet } from './InviteSheet';
 import { ItemEditor, type Draft } from './ItemEditor';
+import { ItemViewer } from './ItemViewer';
 import { OrganizeManySheet, OrganizeSheet } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
@@ -110,6 +112,8 @@ export function BoardScreen({
   const [panel, setPanel] = useState<Panel>('none');
   const [organizingIds, setOrganizingIds] = useState<string[] | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  /** 點兩下打開的檢視模式 */
+  const [inspectId, setInspectId] = useState<string | null>(null);
   const [filesId, setFilesId] = useState<string | null>(null);
   const { prefs, setQueued, setGroup } = useViewPrefs();
 
@@ -134,6 +138,7 @@ export function BoardScreen({
   const askedFor = (item: BoardItem) => editRequests.outgoing.find((r) => r.itemId === item.id);
   const unacked = (list: BoardItem[]) => list.filter((i) => isAnnouncement(i) && !isAckedBy(i, uid));
   const viewing = items.find((i) => i.id === viewingId);
+  const inspecting = items.find((i) => i.id === inspectId);
   const viewingPhotos = viewing ? viewablePhotos(viewing) : [];
   const filesOf = items.find((i) => i.id === filesId);
   const allTags = tagsInUse(items).map((t) => t.tag);
@@ -143,6 +148,9 @@ export function BoardScreen({
     .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null && i.dueAt > now)
     .sort((a, b) => a.dueAt - b.dueAt)[0];
   const readCount = (item: BoardItem) => members.filter((m) => isAckedBy(item, m.uid)).length;
+  // 我在這個公布欄發的、還在時效內的快速通報（快速通報面板上再點一下可以收回）
+  const mySentAlerts =
+    digests?.find((d) => d.gid === gid)?.alerts.filter((a) => a.authorId === uid && isAlertActive(a, now)) ?? [];
   const unreadOf = (memberUid: string) => items.filter((i) => isAnnouncement(i) && !isAckedBy(i, memberUid)).length;
 
   const ack = (item: BoardItem) => acknowledge(gid, item.id, uid).catch((e) => showError('確認失敗', e));
@@ -269,15 +277,18 @@ export function BoardScreen({
     }
   };
 
+  /** 點兩下卡片：打開檢視模式（只是看，作者本人要改也是再按「編輯」） */
+  const inspect = (id: string) => {
+    const item = items.find((i) => i.id === id);
+    if (item && item.type !== 'sticker') setInspectId(id);
+  };
+
+  /** 編輯：可以改的話打開編輯視窗，不行就問要不要請作者同意 */
   const open = (id: string) => {
     const item = items.find((i) => i.id === id);
     if (!item || item.type === 'sticker') return;
     if (!canEdit(item)) {
-      // 不能改內容：有附件就打開附件，有照片就全螢幕看照片，是公告就打開確認面板，都沒有就問要不要請作者同意
-      if (item.files.length) setFilesId(id);
-      else if (viewablePhotos(item).length) setViewingId(id);
-      else if (isAnnouncement(item)) setPanel('announcements');
-      else askEdit(item);
+      askEdit(item);
       return;
     }
     const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, status, tags } = item;
@@ -315,11 +326,9 @@ export function BoardScreen({
     moveItem(gid, id, geo).catch((e) => showError('移動失敗', e));
   };
 
-  /** 多選時整批一起拖完：每一個都移動一樣多 */
-  const commitGroup = (dx: number, dy: number) => {
-    moveItems(gid, selection.map((i) => ({ id: i.id, geo: { x: i.x + dx, y: i.y + dy } }))).catch((e) =>
-      showError('移動失敗', e),
-    );
+  /** 多選時整批一起拖完：每一個都移動一樣多（位置由白板算好） */
+  const commitGroup = (moves: { id: string; x: number; y: number }[]) => {
+    moveItems(gid, moves.map((m) => ({ id: m.id, geo: { x: m.x, y: m.y } }))).catch((e) => showError('移動失敗', e));
   };
 
   /** 移到最上層；好幾個的話保持原本彼此的上下順序 */
@@ -527,7 +536,7 @@ export function BoardScreen({
         onLongPress={sel.longPress}
         onClear={sel.clear}
         onHide={sel.drop}
-        onOpen={open}
+        onOpen={inspect}
         onCommit={commit}
         onCommitGroup={commitGroup}
       />
@@ -536,7 +545,7 @@ export function BoardScreen({
         <View pointerEvents="none" style={s.emptyHint}>
           <Text style={s.emptyTitle}>白板空空的～</Text>
           <Text style={s.emptySub}>
-            用下面的工具貼上便利貼、公告或照片{'\n'}點一下選起來再拖曳・長按可以多選・點兩下編輯
+            用下面的工具貼上便利貼、公告或照片{'\n'}點一下選起來再拖曳・長按可以多選・點兩下打開來看
           </Text>
         </View>
       ) : null}
@@ -604,6 +613,22 @@ export function BoardScreen({
           onClose={() => setOrganizingIds(null)}
         />
       ) : null}
+      {inspecting ? (
+        <ItemViewer
+          gid={gid}
+          item={inspecting}
+          members={members}
+          uid={uid}
+          now={now}
+          access={canEdit(inspecting) ? 'edit' : askedFor(inspecting) ? 'waiting' : 'ask'}
+          onAck={() => ack(inspecting)}
+          onEdit={() => {
+            setInspectId(null);
+            open(inspecting.id);
+          }}
+          onClose={() => setInspectId(null)}
+        />
+      ) : null}
       {viewing && viewingPhotos.length ? (
         <PhotoViewer photos={viewingPhotos} onClose={() => setViewingId(null)} />
       ) : null}
@@ -662,6 +687,8 @@ export function BoardScreen({
           boardName={groupName}
           uid={uid}
           nickname={session.nickname ?? ''}
+          sent={mySentAlerts}
+          memberCount={members.length}
           onClose={() => {
             setPanel('none');
             onCloseQuickAlert?.();

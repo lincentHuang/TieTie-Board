@@ -1,17 +1,26 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { C, F, Ionicons, type IconName } from '@/components/ui';
+import { useBlockPullToClose } from '@/components/useBlockPullToClose';
 import { byQueueOrder, type BoardItem, type Geometry } from '@/lib/types';
 
-import { CanvasItem, type GroupDrag } from './CanvasItem';
+import { CanvasItem, type GroupDrag, type Hit } from './CanvasItem';
 import { QueueBar } from './QueueBar';
 import { filterChips, groupQueue, matchesFilter, type Filter, type QueueGroup } from './queue-filter';
 import { queueLayout } from './queue-layout';
-import { useBlockPullToClose } from './useBlockPullToClose';
+import { nervousness, shoveAside, strollStep, type Move, type Point } from './wander';
 
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 4;
@@ -22,6 +31,12 @@ const BAR_TOP = 60;
 /** 狀態列收起來時的高度；攤開後會變高，隊伍就往下讓位 */
 const BAR_H = 42;
 const BAR_GAP = 22;
+/** 沒看的公告多久往畫面中間走一小段、一段走多遠（螢幕像素）；被手指放下之後休息幾趟再走（約 15 秒） */
+const STROLL_EVERY = 3200;
+const STROLL_STEP = 110;
+const STROLL_REST = 5;
+/** 畫面中間要扣掉下面的工具列，看起來才是正中間 */
+const CENTER_LIFT = 20;
 
 /**
  * 用手指操作（手機、平板）：項目要先點一下選起來才能拖，免得想滑動畫面時不小心拖走；
@@ -64,8 +79,8 @@ interface Props {
   onHide: (ids: string[]) => void;
   onOpen: (id: string) => void;
   onCommit: (id: string, geo: Geometry) => void;
-  /** 多選時整批一起拖完：每個選取的項目都移動了 (dx, dy) */
-  onCommitGroup: (dx: number, dy: number) => void;
+  /** 多選時整批一起拖完：每個選取的項目移到哪 */
+  onCommitGroup: (moves: { id: string; x: number; y: number }[]) => void;
 }
 
 export function Canvas({
@@ -102,6 +117,13 @@ export function Canvas({
   const ignorePan = useSharedValue(false);
   // 多選時整批一起拖：大家都照著同一個位移走
   const groupDrag = useSharedValue<GroupDrag>({ on: false, dx: 0, dy: 0 });
+  // 正在被拖的項目：撞到的會被推開
+  const hit = useSharedValue<Hit>({ on: false, id: '', x: 0, y: 0, w: 0, h: 0, vx: 0, vy: 0 });
+  const reduced = useReducedMotion();
+  /** 沒看的公告走到哪了（只在自己的畫面上，不會存起來；看過就走回原位） */
+  const [wander, setWander] = useState<Record<string, Point>>({});
+  /** 被手指放下的公告還要休息幾趟才繼續走 */
+  const resting = useRef<Record<string, number>>({});
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [zoomText, setZoomText] = useState('100%');
   const containerRef = useRef<View>(null);
@@ -122,10 +144,94 @@ export function Canvas({
     return { visible, secs, layout: queueLayout(secs, Math.max(widest, size.w - QUEUE_PAD * 2)) };
   };
   const { visible: shown, secs: sections, layout: queue } = lineUp(filter, group);
-  const spotOf = (item: BoardItem, q = queue): Geometry => (queued ? (q.spots.get(item.id) ?? item) : item);
+
+  // 自由擺放時：沒看的公告走向畫面中間，擋路的卡片被擠開（減少動態效果時不走）
+  const strolling = !queued && !reduced;
+  const walkers = strolling ? items.filter((i) => isPending(i) && wander[i.id]) : [];
+  const shoved = shoveAside(
+    walkers.map((i) => ({ ...geometryOf(i), ...wander[i.id] })),
+    items.filter((i) => !walkers.includes(i)),
+  );
+  const spotOf = (item: BoardItem, q = queue): Geometry => {
+    if (queued) return q.spots.get(item.id) ?? geometryOf(item);
+    const at = (walkers.includes(item) ? wander[item.id] : undefined) ?? shoved.get(item.id);
+    return at ? { ...geometryOf(item), ...at } : geometryOf(item);
+  };
+  const moveOf = (item: BoardItem): Move =>
+    queued ? 'walk' : walkers.includes(item) ? 'stroll' : shoved.has(item.id) ? 'shove' : 'walk';
   // 一個接一個出發，整隊最多等 1.2 秒
   const walkStep = Math.min(90, 1200 / Math.max(1, shown.length));
   const orderOf = new Map(sections.flatMap((sec) => sec.items).map((item, i) => [item.id, i]));
+
+  /** 沒看的公告往畫面中間走一小段：越緊急的越先走；被選起來、剛被放下的這次不走 */
+  const stroll = () => {
+    if (!size.w) return;
+    const sc = scale.get();
+    const center = { x: (size.w / 2 - tx.get()) / sc, y: (size.h / 2 - CENTER_LIFT - ty.get()) / sc };
+    const pending = items.filter(isPending).sort(byQueueOrder(now));
+    const rest = resting.current;
+    for (const id of Object.keys(rest)) if (--rest[id] <= 0) delete rest[id];
+    const next = strollStep(
+      pending.map((i) => ({
+        id: i.id,
+        at: { ...geometryOf(i), ...wander[i.id] },
+        frozen: selectedIds.includes(i.id) || i.id in rest,
+      })),
+      center,
+      STROLL_STEP / sc,
+    );
+    const out: Record<string, Point> = {};
+    for (const item of pending) {
+      const p = next.get(item.id);
+      if (!p) continue;
+      const prev = wander[item.id];
+      // 還在原位、沒有要走的就不記；走不到 2 點的不算（免得一直重新渲染）
+      if (!prev && Math.hypot(p.x - item.x, p.y - item.y) < 1) continue;
+      out[item.id] = prev && Math.hypot(p.x - prev.x, p.y - prev.y) < 2 ? prev : p;
+    }
+    const same =
+      Object.keys(out).length === Object.keys(wander).length && Object.entries(out).every(([id, p]) => wander[id] === p);
+    if (!same) setWander(out);
+  };
+  // 計時器每次都叫最新的 stroll（拿得到最新的項目、選取、鏡頭位置）
+  const strollRef = useRef(stroll);
+  useEffect(() => {
+    strollRef.current = stroll;
+  });
+  const anyPending = strolling && items.some(isPending);
+  useEffect(() => {
+    if (!anyPending) return;
+    const timer = setInterval(() => strollRef.current(), STROLL_EVERY);
+    return () => clearInterval(timer);
+  }, [anyPending]);
+
+  /** 沒看的公告被手指放到別的地方（或被撞開）：就停在那裡休息一下，不要馬上又走掉 */
+  const settle = (moves: { id: string; x: number; y: number }[]) => {
+    const placed = moves.filter((m) => items.some((i) => i.id === m.id && isPending(i)));
+    for (const m of placed) resting.current[m.id] = STROLL_REST;
+    // 已經走出來的：記住新的位置，才不會又走回剛剛的地方
+    const walked = placed.filter((m) => wander[m.id]);
+    if (walked.length) {
+      setWander((cur) => ({ ...cur, ...Object.fromEntries(walked.map((m) => [m.id, { x: m.x, y: m.y }])) }));
+    }
+  };
+
+  const commit = (id: string, geo: Geometry) => {
+    settle([{ id, x: geo.x, y: geo.y }]);
+    onCommit(id, geo);
+  };
+
+  /** 多選整批拖完：從大家在畫面上站的位置（可能正走在路上、被擠開）一起移動 (dx, dy) */
+  const commitGroup = (dx: number, dy: number) => {
+    const moves = items
+      .filter((i) => selectedIds.includes(i.id))
+      .map((i) => {
+        const at = spotOf(i);
+        return { id: i.id, x: at.x + dx, y: at.y + dy };
+      });
+    settle(moves);
+    onCommitGroup(moves);
+  };
 
   const animateTo = (nx: number, ny: number, ns: number) => {
     const t = { duration: 350 };
@@ -378,10 +484,13 @@ export function Canvas({
                   spot={spotOf(item)}
                   queued={queued}
                   walkDelay={(orderOf.get(item.id) ?? 0) * walkStep}
+                  move={moveOf(item)}
+                  nervous={nervousness(item, isPending(item), now)}
                   now={now}
                   scale={scale}
                   busy={itemBusy}
                   group={groupDrag}
+                  hit={hit}
                   selected={picked}
                   multi={multi}
                   // 排隊時不能拖；多選、用手指時只有選起來的能拖；用滑鼠時直接拖
@@ -392,8 +501,8 @@ export function Canvas({
                   onTap={onTap}
                   onLongPress={onLongPress}
                   onOpen={onOpen}
-                  onCommit={onCommit}
-                  onCommitGroup={onCommitGroup}
+                  onCommit={commit}
+                  onCommitGroup={commitGroup}
                 />
               );
             }) : null}
@@ -440,6 +549,9 @@ export function Canvas({
     </View>
   );
 }
+
+/** 項目在白板上的位置與大小（只取這四個欄位） */
+const geometryOf = (item: BoardItem): Geometry => ({ x: item.x, y: item.y, w: item.w, h: item.h });
 
 function ModeButton({
   icon,

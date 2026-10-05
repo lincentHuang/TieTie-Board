@@ -1,5 +1,12 @@
 import { sendPush, type PushMessage } from '@/lib/push-send';
-import { addAlert, fetchPushRecipient, fetchPushRecipients, type NewAlert, type PushRecipient } from '@/lib/repo';
+import {
+  addAlert,
+  deleteAlert,
+  fetchPushRecipient,
+  fetchPushRecipients,
+  type NewAlert,
+  type PushRecipient,
+} from '@/lib/repo';
 import { itemTitle, type BoardItem } from '@/lib/types';
 
 /** 推播帶的資料：點通知時打開 gid 這個公布欄；收到時背景任務會順便更新小工具 */
@@ -35,28 +42,38 @@ function buildMessages(recipients: PushRecipient[], visible: Visible | null, dat
 
 /**
  * 發出快速通報：先存進資料庫（開著 App 的人、小工具馬上會變），再推播給沒開 App 的人。
- * 推播失敗不算通報失敗，只記錄下來。
+ * 推播在背景送，不用等它（面板上馬上就能再點一下收回）；推播失敗不算通報失敗，只記錄下來。
  */
 export async function sendQuickAlert(gid: string, boardName: string, alert: NewAlert) {
   await addAlert(gid, alert);
-  try {
-    const recipients = await fetchPushRecipients(gid, alert.authorId);
-    const urgent = alert.level === 'urgent';
-    await sendPush(
-      buildMessages(
-        recipients,
-        {
-          title: `${urgent ? '🚨' : '📣'} ${alert.authorName}・${boardName}`,
-          body: `${alert.emoji} ${alert.text}`,
-          channelId: 'alerts',
-          urgent,
-        },
-        { kind: 'alert', gid },
+  const urgent = alert.level === 'urgent';
+  fetchPushRecipients(gid, alert.authorId)
+    .then((recipients) =>
+      sendPush(
+        buildMessages(
+          recipients,
+          {
+            title: `${urgent ? '🚨' : '📣'} ${alert.authorName}・${boardName}`,
+            body: `${alert.emoji} ${alert.text}`,
+            channelId: 'alerts',
+            urgent,
+          },
+          { kind: 'alert', gid },
+        ),
       ),
-    );
-  } catch (e) {
-    console.warn('通報推播失敗', e);
-  }
+    )
+    .catch((e) => console.warn('通報推播失敗', e));
+}
+
+/**
+ * 收回自己發的通報：從資料庫刪掉（開著 App 的人卡片馬上消失），
+ * 再送背景推播讓大家的小工具恢復原狀。已經跳出來的通知收不回來，只能讓它不再顯示在 App 和小工具上
+ */
+export async function recallQuickAlert(gid: string, alertId: string, uid: string) {
+  await deleteAlert(gid, alertId);
+  fetchPushRecipients(gid, uid)
+    .then((recipients) => sendPush(buildMessages(recipients, null, { kind: 'alert', gid })))
+    .catch((e) => console.warn('收回通報後更新小工具失敗', e));
 }
 
 /**
