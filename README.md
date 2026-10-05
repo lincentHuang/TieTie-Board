@@ -80,15 +80,41 @@ npm run dev:web     # 終端機 2：開網頁版 http://localhost:8081
 
 ### 自動部署
 
-**推到 `main` 就會自動更新網站**（Vercel 連著 GitHub，大約 1～2 分鐘）。其他分支不會部署（見 `vercel.json` 的 `git.deploymentEnabled`）。
+推到 `main` 就會自動更新，其他分支不會部署：
+
+| 部署什麼 | 怎麼部署 | 什麼時候 |
+|---|---|---|
+| 網站 | Vercel 連著 GitHub（見 `vercel.json` 的 `git.deploymentEnabled`） | 每次推到 `main`，大約 1～2 分鐘 |
+| 權限規則（`firestore.rules`） | GitHub Actions（`.github/workflows/deploy-rules.yml`） | 推到 `main` 而且 `firestore.rules` 有改；也可以在 GitHub 的 Actions 頁面手動按「Run workflow」 |
 
 - Firebase 設定值放在 Vercel 專案的環境變數（Production），**不在 GitHub 上**（repo 是公開的）。
   本機開發用的 `.env` 一樣不進 git。
 - 這些 `EXPO_PUBLIC_` 值會打包進網頁，本來就是公開的；真正擋外人的是 `firestore.rules` 和 API key 的限制。
-- 部署失敗時，到 Vercel 專案的 Deployments 頁看紀錄；網站會維持上一個成功的版本。
+- 網站部署失敗時，到 Vercel 專案的 Deployments 頁看紀錄；網站會維持上一個成功的版本。
+- 權限規則上傳前 Firebase 會先編譯，寫錯會直接失敗（GitHub 寄信通知），正式環境維持原本的規則；
+  但「語法對、邏輯錯」的規則會照樣上去，改規則前先用模擬器（`npm run emulators` + `npm run dev:web`）實際操作過。
+- Android App（APK）不會自動建置，發新版的方式見下面「裝到手機」。
 
-權限規則**不會**自動部署（改錯可能讓資料外洩或全家打不開，而且自動部署要把 Firebase 管理金鑰放上 GitHub），
-改了 `firestore.rules` 要手動上傳（需要先 `npx firebase-tools login`）：
+#### 權限規則自動部署的金鑰（只要設定一次）
+
+GitHub Actions 用一個**只能改權限規則**的服務帳號上傳（不能讀寫資料、不能改其他設定），金鑰放在 GitHub 的 Secrets，不在程式碼裡：
+
+1. 到 Google Cloud 建立服務帳號：<https://console.cloud.google.com/iam-admin/serviceaccounts/create?project=tietie-board>
+   - 名稱：`github-rules-deployer`
+   - 角色加兩個：**Firebase Rules Admin**（上傳規則）、**Service Usage Consumer**（檢查 Firestore API 有沒有開）
+2. 點進建好的服務帳號 → 「金鑰」→「新增金鑰」→「建立新的金鑰」→ JSON，會下載一個 `.json` 檔
+3. 把金鑰存到 GitHub，然後**刪掉下載的檔案**：
+
+   ```bash
+   gh secret set FIREBASE_SERVICE_ACCOUNT --repo lincentHuang/TieTie-Board < 下載的金鑰.json
+   rm 下載的金鑰.json
+   ```
+
+4. 到 GitHub 的 Actions 頁面 →「部署 Firestore 權限規則」→「Run workflow」，跑一次確認設定成功
+
+金鑰外洩或不用了：到同一個服務帳號的「金鑰」頁刪掉它，再照上面重新建一把。
+
+自動部署壞掉、或想馬上上傳時，本機一樣可以手動上傳（需要先 `npx firebase-tools login`）：
 
 ```bash
 npm run deploy:rules
@@ -347,6 +373,7 @@ api/oauth.ts              Vercel Function：手機 App 用系統瀏覽器登入 
 api/join.ts               Vercel Function：LINE 群組成員點邀請連結時，確認後直接加入（免審核）
 api/line-webhook.ts       Vercel Function：LINE 官方帳號的 Webhook，房主貼邀請連結時綁定群組
 firestore.rules           資料庫權限規則
+.github/workflows/        GitHub Actions：推到 main 時自動上傳權限規則（deploy-rules.yml）
 public/                   網頁版的 HTML 範本、PWA 設定（manifest.json）與圖示、Android App Links 的 .well-known/assetlinks.json
 ```
 

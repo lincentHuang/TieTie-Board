@@ -1,0 +1,52 @@
+# Firestore 權限規則：推到 main、而且 firestore.rules 有改，就自動上傳到正式環境（tietie-board）。
+# 網站本身由 Vercel 連著 GitHub 自動部署，不在這裡。
+# 需要先在 GitHub 設定 FIREBASE_SERVICE_ACCOUNT（只能改權限規則的服務帳號金鑰），設定方式見 README「自動部署」。
+name: 部署 Firestore 權限規則
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - firestore.rules
+      - firebase.json
+  # 也可以在 GitHub 的 Actions 頁面手動按「Run workflow」重新上傳
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 一次只跑一個，連續推兩次時照順序上傳，最後上去的一定是最新的版本
+concurrency:
+  group: firestore-rules
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # 金鑰只寫進這次執行的暫存資料夾，結束就刪掉；沒設定的話直接失敗，不要假裝部署成功
+      - name: 準備服務帳號金鑰
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "::error::還沒設定 FIREBASE_SERVICE_ACCOUNT，權限規則沒有上傳（設定方式見 README「自動部署」）"
+            exit 1
+          fi
+          printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+
+      # 上傳前 Firebase 會先編譯規則，寫錯就停在這裡，正式環境維持原本的規則
+      - name: 上傳權限規則
+        run: npx --yes firebase-tools@15 deploy --only firestore:rules --project tietie-board --non-interactive
+
+      - name: 刪掉金鑰
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-sa.json"
