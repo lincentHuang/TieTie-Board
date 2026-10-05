@@ -145,7 +145,7 @@ npx expo run:android   # 需要 Android Studio
 |---|---|
 | LINE 裡（從家庭群組點邀請連結） | 自動用 LINE 登入，什麼都不用按 |
 | 電腦或手機的一般瀏覽器 | 「用 LINE 登入」或「沒有 LINE？用 Google 登入」，也可以不登入、自己取暱稱 |
-| 手機 App | 目前還是匿名登入、自己取暱稱 |
+| 手機 App | 「用 LINE 登入」或「沒有 LINE？用 Google 登入」（用手機的瀏覽器登入完回到 App），也可以不登入、自己取暱稱 |
 
 登入後名字和大頭貼跟著帳號走；換手機、換電腦，用同一個 LINE / Google 帳號登入就還是同一個人。
 已經加入公布欄的匿名成員，可以在「我的公布欄」（點左上角的名稱）最下面登入，原本的公布欄、便利貼都會留著。
@@ -198,7 +198,7 @@ npx expo run:android   # 需要 Android Studio
 | 怎麼加入的 | 結果 |
 |---|---|
 | 用 LINE 登入、在房主綁定的 LINE 群組裡（從家庭群組點邀請連結） | 直接加入 |
-| 其他（自己輸入邀請碼、手機 App、Google / 匿名、連結被轉傳到別的群組） | 送出申請，房主在「家人」面板按「同意」後自動加入 |
+| 其他（自己輸入邀請碼、Google / 匿名、連結被轉傳到別的群組） | 送出申請，房主在「家人」面板按「同意」後自動加入 |
 
 - 房主的家人按鈕上會顯示有幾個人在等；申請的人在「我的公布欄」看得到「等房主同意」，可以收回
 - 沒設定 LINE 官方帳號時，所有人都走申請
@@ -234,7 +234,7 @@ npx expo run:android   # 需要 Android Studio
 注意：
 - 房主要用手機版 LINE 貼連結：電腦版 LINE 的訊息有時候沒有發訊人的 LINE 使用者 ID，沒辦法確認是不是房主
 - 匿名建立的公布欄，換成「別台裝置用過的 Google 帳號」時，房主身分不會跟著搬（換成 LINE 帳號會）；這時要用原本的身分處理申請
-- 手機 App 目前沒有 LINE 登入，從 App 加入一律走申請；App 要更新到這一版，舊版加入時會被新規則擋下
+- App 要更新到這一版，舊版加入時會被新規則擋下
 
 ### Google 登入（備案）
 
@@ -250,6 +250,34 @@ npx expo run:android   # 需要 Android Studio
 1. **Firebase 主控台** → Authentication → 登入方式 → 新增「Google」，填支援電子郵件後啟用
 2. Authentication → 設定 → **授權網域**：加入 `tietie-board.vercel.app`（沒加會顯示「這個網址還沒加進 Firebase 的授權網域」）
 3. 如果 Google Cloud 的瀏覽器 API key 有設「網站限制（HTTP referrer）」，要加上 `tietie-board.firebaseapp.com/*`（登入視窗是從這個網域開的）
+
+### 手機 App 的 LINE / Google 登入
+
+App 裡沒有 LIFF（只能在 LINE 內建瀏覽器用），也開不了 Firebase 的 Google 彈出視窗，所以改用手機的瀏覽器登入（OAuth authorization code + PKCE）：
+
+1. 按「用 LINE 登入」/「用 Google 登入」→ App 用系統瀏覽器打開 `https://tietie-board.vercel.app/api/oauth?provider=…`，它轉到 LINE / Google 的登入頁（`src/lib/oauth.ts`）
+2. 登入完轉回 `/api/oauth?code=…`，這頁把 code 帶回 `tietieboard://oauth`；Chrome 沒自動跳回 App 時，頁面上有「回到貼貼公布欄」按鈕
+3. App 把 code 和 PKCE 的 code_verifier 交給 `POST /api/oauth`，伺服器用 channel secret / client secret 換成 ID token（`api/oauth.ts`）
+4. 之後跟網頁版一樣：LINE 的 ID token 交給 `/api/line-login` 換 Firebase 登入憑證；Google 的用 `linkWithCredential` 綁上目前的帳號
+   - 匿名成員第一次登入沿用同一個 uid；這個 LINE / Google 帳號在別台裝置（或網頁版）用過，就換回那個身分
+
+設定步驟（只要做一次，伺服器設定好就生效，不用重新建置 App）：
+
+1. **LINE Developers Console** → LINE Login 頻道 → 「LINE Login」分頁 → **Callback URL** 加上 `https://tietie-board.vercel.app/api/oauth`
+2. **Google Cloud Console**（Firebase 同一個專案）→ API 和服務 → 憑證 → OAuth 2.0 用戶端 ID 的
+   「**Web client (auto created by Google Service)**」→ **已授權的重新導向 URI** 加上 `https://tietie-board.vercel.app/api/oauth`
+   - 一定要用這個 client：Firebase 只認得它發的 Google ID token
+3. **Vercel 專案** → Environment Variables（Production）新增（都勾 Sensitive），存好後重新部署一次：
+
+   | 名稱 | 值 |
+   |---|---|
+   | `LINE_CHANNEL_SECRET` | LINE Login 頻道「Basic settings」分頁的 Channel secret（不是官方帳號那個） |
+   | `GOOGLE_CLIENT_ID` | 上面那個 Web client 的用戶端 ID（`….apps.googleusercontent.com`） |
+   | `GOOGLE_CLIENT_SECRET` | 同一個 Web client 的用戶端密鑰 |
+
+注意：
+- 沒設定好時，App 按登入會顯示「伺服器還沒設定好 LINE 登入 / Google 登入」
+- 手機有登入 LINE App 時，LINE 的登入頁通常會自動登入（不用輸入帳號密碼）
 
 ## 裝到手機（PWA、Android App）
 
@@ -288,7 +316,7 @@ LINE 15.20 以後有裝 App 就直接切過去，沒裝就用手機的瀏覽器�
 
 注意：
 - 改了 `intentFilters` 要重新建置 APK、發新的 Release；家人要更新 App 才會生效
-- 手機 App 目前是匿名登入，跟 LINE 帳號是不同的人：App 裡還沒加入的公布欄，交給 App 後會送出加入申請，等房主同意
+- App 裡沒登入（匿名）的話，跟 LINE 帳號是不同的人：App 裡還沒加入的公布欄，交給 App 後會送出加入申請，等房主同意；先在 App 的「設定 → 我的帳號」用 LINE 登入就不用等
 - 驗證網站設定：`https://tietie-board.vercel.app/.well-known/assetlinks.json` 要打得開；裝好 App 後可以用
   `adb shell pm get-app-links com.huanglingcheng.tietieboard` 看 `tietie-board.vercel.app` 是不是 `verified`
 - iPhone 加到主畫面的網頁沒辦法從連結打開（iOS 的限制）。在 LINE 裡加入後會提醒從主畫面打開；
@@ -306,8 +334,9 @@ src/features/files/       附件：編輯時挑檔、附件清單、上傳下載
 src/features/pet/         公告小幫手：外觀（SVG）、捏寵物、提醒台詞、等級（尚未接到畫面上）
 src/features/settings/    設定（右上角齒輪）、裝到手機：安裝提醒、依裝置教怎麼安裝（PWA / Android App）、在 LINE 裡改用 App 打開
 src/components/           共用 UI：配色字型、按鈕、底部面板、頭像、對話框
-src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts）、加入公布欄（join.ts）、挑檔（documents.ts）、檔案快取與開檔（files.ts / files.native.ts）
+src/lib/                  共用基礎：Firebase、資料存取（repo.ts）、型別、日期、錯誤訊息、提醒通知、登入（sign-in.ts、LINE：line.ts、liff.ts、App 用瀏覽器登入：oauth.ts）、加入公布欄（join.ts）、挑檔（documents.ts）、檔案快取與開檔（files.ts / files.native.ts）
 api/line-login.ts         Vercel Function：驗證 LINE 登入，發 Firebase 登入憑證
+api/oauth.ts              Vercel Function：手機 App 用系統瀏覽器登入 LINE / Google（轉到登入頁、帶 code 回 App、換 ID token）
 api/join.ts               Vercel Function：LINE 群組成員點邀請連結時，確認後直接加入（免審核）
 api/line-webhook.ts       Vercel Function：LINE 官方帳號的 Webhook，房主貼邀請連結時綁定群組
 firestore.rules           資料庫權限規則

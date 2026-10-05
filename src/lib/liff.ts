@@ -29,10 +29,14 @@ export async function lineIdentity(): Promise<LineIdentity | null> {
   return { idToken, sub: decoded.sub, name: decoded.name?.trim() || null, avatarUrl: decoded.picture ?? null };
 }
 
-/** 在一般瀏覽器按「用 LINE 登入」：跳到 LINE 登入頁，登入完回到同一頁 */
-export async function loginWithLine() {
+/**
+ * 在一般瀏覽器按「用 LINE 登入」：跳到 LINE 登入頁，登入完回到同一頁（打開時 lineIdentity 就會登入），所以這裡一律回傳 null。
+ * 跟手機 App 版（登入完直接回傳 LINE 身分）用同一個簽名
+ */
+export async function loginWithLine(): Promise<LineIdentity | null> {
   await init();
   liff.login({ redirectUri: window.location.href });
+  return null;
 }
 
 /** 換 Firebase 登入失敗（例如外部瀏覽器存的 LINE 登入過期）：清掉，下次重新登入 LINE */

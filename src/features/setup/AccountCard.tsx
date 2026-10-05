@@ -5,14 +5,14 @@ import { MemberAvatar } from '@/components/MemberAvatar';
 import { Button, C, F } from '@/components/ui';
 import { errorMessage } from '@/lib/errors';
 import { canLoginWithGoogle } from '@/lib/firebase';
-import { canLoginWithLine, loginWithLine } from '@/lib/liff';
+import { canLoginWithLine } from '@/lib/liff';
 import { useSession } from '@/lib/session';
 
 const VIA = { line: 'LINE', google: 'Google' };
 
 /**
  * 登入方式：LINE 為主（家庭群組點進來最順），Google 當備案（在電腦上看、沒有 LINE 的人）。
- * 已經登入就顯示目前的身分；兩種都不能用時（例如手機 App 版）只在有 anonymousNote 時顯示名字，不然什麼都不顯示。
+ * 已經登入就顯示目前的身分；兩種都不能用時只在有 anonymousNote 時顯示名字，不然什麼都不顯示。
  */
 export function AccountCard({
   hint,
@@ -64,7 +64,7 @@ export function AccountCard({
           icon="chatbubble-ellipses"
           label="用 LINE 登入"
           busy={busy === 'line'}
-          onPress={() => run('line', loginWithLine)}
+          onPress={() => run('line', session.loginWithLine)}
         />
       ) : null}
       {google ? (

@@ -6,8 +6,8 @@ description: 公布欄 App（Expo Router + React Native + Firebase）的前端�
 # 角色：資深 Expo / React Native 架構師
 
 這個專案是 **Expo Router + React Native（iOS / Android / 網頁共用一套程式）**，後端是 **Firebase（Firestore，直接由 App 端連線）**。沒有 React Server Components、沒有 Server Actions。
-登入方式：LINE 為主（網頁版在 LINE 裡自動登入）、Google 當備案（網頁版），都沒有就匿名登入、自己取暱稱（手機 App 版目前只有這個）；流程集中在 `src/lib/sign-in.ts` 與 `session.tsx`。
-伺服器程式只有 `api/` 裡的 Vercel Function，一般資料讀寫不要經過它們：`line-login.ts`（網頁版用 LINE 登入時驗證 LINE 的 ID token、發 Firebase custom token）、`join.ts`（LINE 群組成員點邀請連結時，用 LINE 官方帳號確認在群組裡就直接加入）、`line-webhook.ts`（房主把邀請連結貼到群組時綁定群組）。其他人加入公布欄要等房主同意（`src/lib/join.ts`）。
+登入方式：LINE 為主（網頁版在 LINE 裡自動登入）、Google 當備案，都沒有就匿名登入、自己取暱稱；手機 App 版按按鈕後用系統瀏覽器登入 LINE / Google（`src/lib/oauth.ts`）。流程集中在 `src/lib/sign-in.ts` 與 `session.tsx`。
+伺服器程式只有 `api/` 裡的 Vercel Function，一般資料讀寫不要經過它們：`line-login.ts`（用 LINE 登入時驗證 LINE 的 ID token、發 Firebase custom token）、`oauth.ts`（手機 App 用系統瀏覽器登入 LINE / Google：轉到登入頁、帶 code 回 App、用 secret 換 ID token）、`join.ts`（LINE 群組成員點邀請連結時，用 LINE 官方帳號確認在群組裡就直接加入）、`line-webhook.ts`（房主把邀請連結貼到群組時綁定群組）。其他人加入公布欄要等房主同意（`src/lib/join.ts`）。
 以下規範把「薄路由、領域分層、零洩漏、型別安全」的原則，套用在這個專案實際的架構上。
 
 寫任何 Expo / React Native API 之前，照 `AGENTS.md` 先查對應版本（`package.json` 的 `expo` 主版本）的官方文件，不要憑記憶。

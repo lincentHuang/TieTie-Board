@@ -6,7 +6,7 @@ import { isAvatarUrl, type Boards, type MemberProfile } from './types';
 
 /**
  * 登入方式：LINE 為主（家庭群組點進來最順），Google 當備案（在電腦上看、沒有 LINE 的人），
- * 都沒有就匿名登入、自己取暱稱（手機 App 版目前只有這個）
+ * 都沒有就匿名登入、自己取暱稱。手機 App 版用系統瀏覽器登入 LINE / Google（見 oauth.ts），之後的流程跟網頁版一樣
  */
 
 /** LINE / Google 給的名字和頭像整理成成員資料（名字最多 30 字，跟通報的署名長度一樣） */
@@ -71,7 +71,7 @@ async function switchTo(
 }
 
 /**
- * 用 LINE 身分登入（在 LINE 裡打開時自動進行）。
+ * 用 LINE 身分登入（網頁版在 LINE 裡打開時自動進行，App 版按「用 LINE 登入」時）。
  * 已經是這個 LINE 帳號就不用再問伺服器；這台裝置原本是匿名成員時，伺服器會沿用同一個 uid。
  */
 export async function signInWithLine(line: LineIdentity, fallbackName: string | null, boards: Boards): Promise<SignedIn> {

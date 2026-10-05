@@ -5,7 +5,7 @@ import { AppState } from 'react-native';
 import { newAccountBoards, rememberBoard, withAccountBoards } from './account-boards';
 import { errorMessage } from './errors';
 import { currentAccount, ensureSignedIn, firebaseConfigured } from './firebase';
-import { forgetLineLogin, lineIdentity } from './liff';
+import { forgetLineLogin, lineIdentity, loginWithLine as openLineLogin } from './liff';
 import { signInWithGoogle, signInWithLine, syncProfile, toProfile, type SignedIn } from './sign-in';
 import type { Boards } from './types';
 
@@ -38,6 +38,11 @@ interface SessionState {
   switchGroup: (groupId: string) => Promise<void>;
   /** 從清單拿掉目前的公布欄，換到下一個（都沒有了就回到第一次使用畫面） */
   leaveGroup: () => Promise<void>;
+  /**
+   * 用 LINE 登入：網頁版會跳到 LINE 登入頁（回來時打開公布欄就會登入，所以這裡回傳 false）；
+   * 手機 App 版用系統瀏覽器登入完直接換成 LINE 帳號。使用者取消回傳 false
+   */
+  loginWithLine: () => Promise<boolean>;
   /** 用 Google 登入（要在按鈕的 onPress 裡直接呼叫，不然瀏覽器會擋彈出視窗）；使用者取消回傳 false */
   loginWithGoogle: () => Promise<boolean>;
 }
@@ -259,6 +264,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (groupId) rememberBoard(uid, groupId, null);
       setGroupIds(ids);
       setGroupId(next);
+    },
+    loginWithLine: async () => {
+      const line = await openLineLogin();
+      if (!line) return false;
+      const signed = await signInWithLine(line, nickname, { groupIds, pendingIds });
+      apply(await settle({ nickname, avatarUrl, groupId, groupIds, pendingIds }, signed, 'line'));
+      return true;
     },
     loginWithGoogle: async () => {
       const signed = await signInWithGoogle(nickname, { groupIds, pendingIds });

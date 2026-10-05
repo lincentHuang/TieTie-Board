@@ -2,6 +2,7 @@ import { getApps, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, signInAnonymously, signInWithCustomToken, type User } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
 
+import { postApi } from './api';
 import { canLoginWithGoogle, createAuth, linkGoogle } from './firebase-auth';
 
 export { canLoginWithGoogle };
@@ -113,21 +114,6 @@ export async function joinWithLineGroup(gid: string, profile: { name: string; av
   if (!user) throw new Error('還沒登入，請重新整理再試一次');
   const body = await postApi('/api/join', { idToken: await user.getIdToken(), code: gid, ...profile }, '加入失敗');
   return body.joined === true;
-}
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-/** 呼叫網站自己的伺服器函式（只有網頁版用得到）；失敗時用伺服器給的中文訊息 */
-async function postApi(path: string, payload: Record<string, unknown>, failure: string) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data: unknown = await res.json().catch(() => null);
-  const body = isRecord(data) ? data : {};
-  if (!res.ok) throw new Error(typeof body.error === 'string' ? body.error : `${failure}（${res.status}）`);
-  return body;
 }
 
 export async function signInWithToken(token: string) {
