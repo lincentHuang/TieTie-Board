@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Ionicons, Label } from '@/components/ui';
 import { FileRow } from '@/features/files/FileRow';
@@ -51,7 +52,11 @@ export function AnnouncementsSheet({
                 {i.priority === 'urgent' ? '⚠️' : '📢'} {PRIORITY_META[i.priority].label}・{i.authorName}・{timeAgo(i.createdAt, now)}
               </Text>
             </View>
-            <Text style={s.title}>{i.text || itemTitle(i)}</Text>
+            {i.text ? (
+              <RichText linkable text={i.text} fontSize={21} lineHeight={29} style={s.title} />
+            ) : (
+              <Text style={s.title}>{itemTitle(i)}</Text>
+            )}
             {i.dueAt ? (
               <Text style={s.when}>
                 📅 {whenLabel(i.dueAt, now)}（{countdownLabel(i.dueAt, now)}）

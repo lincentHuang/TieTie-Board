@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, type SharedValue } from 'react-native-reanimated';
 
+import { RichText } from '@/components/RichText';
 import { C, F, Ionicons } from '@/components/ui';
 import { fileKind } from '@/features/files/file-kinds';
 import { countdownLabel, whenLabel } from '@/lib/dates';
+import { plainText } from '@/lib/rich-text';
 import { PRIORITY_META, STATUS_META, isAnnouncement, tagColor, type Attachment, type BoardItem } from '@/lib/types';
 
 const TAPES = ['#FF9BB8', '#8FD9C4', '#FFD66B', '#A9C8FF', '#C9B4FF'];
@@ -119,7 +121,7 @@ export function ItemBody({
           <Image pointerEvents="none" source={{ uri: item.imageData }} style={[s.fill, s.photo]} contentFit="cover" />
           {item.text ? (
             <Text style={s.caption} numberOfLines={2}>
-              {item.text}
+              {plainText(item.text)}
             </Text>
           ) : null}
           {tags}
@@ -140,9 +142,7 @@ export function ItemBody({
             所以文字用絕對定位照自己的高度排版，多出來的由外框裁掉 */}
         {item.text || (!item.photos.length && !item.files.length) ? (
           <View style={s.noteBody}>
-            <Text style={[s.noteText, { fontSize: item.fontSize, lineHeight: item.fontSize * 1.35 }, done && s.doneText]}>
-              {item.text}
-            </Text>
+            <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.noteText, done && s.doneText]} />
           </View>
         ) : null}
         {item.photos.length ? <CardPhotos photos={item.photos} carousel={item.carousel} /> : null}

@@ -1,3 +1,5 @@
+import { richTitle } from './rich-text';
+
 export type ItemType = 'note' | 'image' | 'sticker';
 export const ITEM_TYPES: ItemType[] = ['note', 'image', 'sticker'];
 
@@ -246,11 +248,11 @@ export const isAnnouncement = (item: BoardItem) => item.priority !== 'none';
 export const isAckedBy = (item: BoardItem, uid: string) =>
   !isAnnouncement(item) || item.authorId === uid || uid in item.ackBy;
 
-/** 取得公告的標題：第一行文字；只放了檔案就用檔名 */
+/** 取得公告的標題：標成標題的那行，沒有就用第一行（去掉格式記號）；只放了檔案就用檔名 */
 export const itemTitle = (item: Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files'>) => {
-  if (item.type === 'image') return item.text.split('\n')[0] || '圖片';
+  if (item.type === 'image') return richTitle(item.text) || '圖片';
   if (item.type === 'sticker') return item.sticker ?? '貼圖';
-  return item.text.split('\n')[0] || (item.photos.length ? '照片' : item.files[0]?.name ?? '（沒有文字）');
+  return richTitle(item.text) || (item.photos.length ? '照片' : item.files[0]?.name ?? '（沒有文字）');
 };
 
 /** 點開來可以放大看的照片：拍立得是那一張，便利貼是附的照片 */

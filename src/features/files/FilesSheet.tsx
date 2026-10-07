@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Label } from '@/components/ui';
 import { itemTitle, type BoardItem } from '@/lib/types';
@@ -21,7 +22,11 @@ export function FilesSheet({
 }) {
   return (
     <Sheet visible title="附件" onClose={onClose}>
-      <Text style={s.text}>{item.text || itemTitle(item)}</Text>
+      {item.text ? (
+        <RichText linkable text={item.text} fontSize={17} lineHeight={24} style={s.text} />
+      ) : (
+        <Text style={s.text}>{itemTitle(item)}</Text>
+      )}
       <Text style={s.author}>{item.authorName} 貼的</Text>
       <Label>檔案（{item.files.length}）</Label>
       <View style={s.list}>

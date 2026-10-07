@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Ionicons, Label } from '@/components/ui';
 import { FileRow } from '@/features/files/FileRow';
@@ -96,9 +97,7 @@ export function ItemViewer({
 
       {item.text ? (
         <View style={[s.paper, item.type === 'note' && { backgroundColor: item.color === 'transparent' ? '#FFF' : item.color }]}>
-          <Text selectable style={[s.text, item.status === 'done' && s.doneText]}>
-            {item.text}
-          </Text>
+          <RichText selectable linkable text={item.text} fontSize={19} lineHeight={28} style={[s.text, item.status === 'done' && s.doneText]} />
         </View>
       ) : null}
 
@@ -178,7 +177,7 @@ const s = StyleSheet.create({
   whenSub: { marginLeft: 'auto', fontSize: 13, fontFamily: F.display, color: C.sub },
   bigPhoto: { width: '100%', height: 280, borderRadius: 18, backgroundColor: '#F4EEFF', marginBottom: 10 },
   paper: { backgroundColor: '#F7F2FF', borderRadius: 18, padding: 14, borderWidth: 2, borderColor: '#0000000A' },
-  text: { fontSize: 19, lineHeight: 28, fontFamily: F.display, color: C.ink },
+  text: { fontFamily: F.display, color: C.ink },
   doneText: { opacity: 0.55, textDecorationLine: 'line-through' },
   thumbs: { gap: 8 },
   thumb: { width: 110, height: 110, borderRadius: 14, backgroundColor: '#F4EEFF' },

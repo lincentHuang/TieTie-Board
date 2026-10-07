@@ -4,11 +4,13 @@ import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-nati
 
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Label, Segmented } from '@/components/ui';
+import { RichText } from '@/components/RichText';
+import { Button, C, F, Ionicons, Label, Segmented, type IconName } from '@/components/ui';
 import { FilePicker } from '@/features/files/FilePicker';
 import type { PendingFiles } from '@/features/files/transfer';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import type { PickedFile } from '@/lib/documents';
+import { hasFormatting, insertLink, safeUrl, toggleHeading, wrapSelection, type Selection } from '@/lib/rich-text';
 import { MAX_FILES, MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
 import { DateTimeField } from './DateTimeField';
@@ -118,19 +120,21 @@ export function ItemEditor({
       }>
       {isImage && draft.imageData ? <Preview uri={draft.imageData} /> : null}
 
-      <Label>{isImage ? '說明（選填）' : '內容（第一行會當作標題，顯示在桌面小工具）'}</Label>
-      <TextInput
-        value={draft.text}
-        onChangeText={(text) => set({ text })}
-        placeholder={isImage ? '例：畢業典禮大合照' : '例：週六 9:00 全家大掃除\n記得先把自己房間收好'}
-        placeholderTextColor="#B9B2CF"
-        multiline
-        autoFocus={isNew && !isImage}
-        style={[
-          s.input,
-          !isImage && { backgroundColor: draft.color, fontSize: Math.min(draft.fontSize, 28), minHeight: 120 },
-        ]}
-      />
+      {isImage ? (
+        <>
+          <Label>說明（選填）</Label>
+          <TextInput
+            value={draft.text}
+            onChangeText={(text) => set({ text })}
+            placeholder="例：畢業典禮大合照"
+            placeholderTextColor="#B9B2CF"
+            multiline
+            style={s.input}
+          />
+        </>
+      ) : (
+        <NoteText draft={draft} autoFocus={isNew} onChange={(text) => set({ text })} />
+      )}
 
       {!isImage ? (
         <>
@@ -215,6 +219,105 @@ export function ItemEditor({
   );
 }
 
+/** 便利貼內容：上面一排按鈕把選到的字標成標題、重點、連結，下面預覽排出來的樣子 */
+function NoteText({ draft, autoFocus, onChange }: { draft: Draft; autoFocus: boolean; onChange: (text: string) => void }) {
+  const text = draft.text;
+  const [rawSel, setSel] = useState<Selection>({ start: text.length, end: text.length });
+  /** 網頁版打字時不一定會回報游標位置，記下的位置可能超過現在的內容，先校正 */
+  const sel = {
+    start: Math.min(rawSel.start, rawSel.end, text.length),
+    end: Math.min(Math.max(rawSel.start, rawSel.end), text.length),
+  };
+  /** 按了按鈕之後要把游標 / 選取放到哪裡；輸入框回報新位置後就放手 */
+  const [forced, setForced] = useState<Selection | undefined>();
+  const [linking, setLinking] = useState(false);
+  const [url, setUrl] = useState('');
+
+  const apply = (next: { text: string; sel: Selection }) => {
+    onChange(next.text);
+    setSel(next.sel);
+    setForced(next.sel);
+  };
+  const addLink = () => {
+    const safe = safeUrl(url.trim());
+    if (!safe) return showError('網址怪怪的', new Error('請貼上 https:// 開頭的網址'));
+    apply(insertLink(text, sel, safe));
+    setUrl('');
+    setLinking(false);
+  };
+  const picked = sel.end > sel.start;
+
+  return (
+    <>
+      <Label>內容</Label>
+      <View style={s.tools}>
+        <Tool icon="text" label="標題" onPress={() => apply(toggleHeading(text, sel))} />
+        <Tool icon="color-wand" label="重點" onPress={() => apply(wrapSelection(text, sel, '**', '**', '重點'))} />
+        <Tool icon="link" label="連結" active={linking} onPress={() => setLinking((v) => !v)} />
+      </View>
+      {linking ? (
+        <View style={s.linkRow}>
+          <TextInput
+            value={url}
+            onChangeText={setUrl}
+            placeholder="貼上網址 https://…"
+            placeholderTextColor="#B9B2CF"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            autoFocus
+            onSubmitEditing={addLink}
+            style={[s.input, s.linkInput]}
+          />
+          <Button label="加入" onPress={addLink} disabled={!url.trim()} />
+        </View>
+      ) : null}
+      <TextInput
+        value={text}
+        onChangeText={onChange}
+        selection={forced}
+        onSelectionChange={(e) => {
+          setSel(e.nativeEvent.selection);
+          setForced(undefined);
+        }}
+        placeholder={'例：週六 9:00 全家大掃除\n記得先把自己房間收好'}
+        placeholderTextColor="#B9B2CF"
+        multiline
+        autoFocus={autoFocus && !linking}
+        style={[s.input, { backgroundColor: draft.color, fontSize: Math.min(draft.fontSize, 28), minHeight: 120 }]}
+      />
+      <Text style={s.hint}>
+        {linking
+          ? picked
+            ? '選到的字會變成連結，大家點一下就打開網址。'
+            : '沒選字的話直接放網址；先選字再按「加入」，那幾個字就會變成連結。'
+          : '先選字再按按鈕。標題會顯示在桌面小工具和通知上；沒設標題就用第一行。直接貼的網址也點得開。'}
+      </Text>
+      {hasFormatting(text) ? (
+        <>
+          <Label>預覽</Label>
+          <View style={[s.preview2, { backgroundColor: draft.color }]}>
+            <RichText linkable text={text} fontSize={Math.min(draft.fontSize, 28)} lineHeight={Math.min(draft.fontSize, 28) * 1.35} style={s.previewText} />
+          </View>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+function Tool({ icon, label, active, onPress }: { icon: IconName; label: string; active?: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`標成${label}`}
+      style={({ pressed }) => [s.tool, (active || pressed) && s.toolOn]}>
+      <Ionicons name={icon} size={16} color={active ? '#FFF' : C.ink} />
+      <Text style={[s.toolText, active && { color: '#FFF' }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 /** 拍立得的預覽：點一下全螢幕放大看 */
 function Preview({ uri }: { uri: string }) {
   const [open, setOpen] = useState(false);
@@ -246,6 +349,24 @@ const s = StyleSheet.create({
   swatchActive: { borderWidth: 4, borderColor: C.primary },
   hint: { fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 18 },
   hintTight: { marginTop: 0 },
+  tools: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  tool: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: C.line,
+    backgroundColor: C.card,
+  },
+  toolOn: { backgroundColor: C.sky, borderColor: C.sky },
+  toolText: { fontSize: 14, fontFamily: F.display, color: C.ink },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  linkInput: { flex: 1, minHeight: 0, paddingVertical: 10 },
+  preview2: { borderRadius: 18, padding: 14, borderWidth: 2, borderColor: C.line },
+  previewText: { fontFamily: F.display, color: C.ink },
   // 標題的上下間距移到整排上，開關才會跟文字置中對齊
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 18, marginBottom: 8 },
   rowLabel: { marginTop: 0, marginBottom: 0, flexShrink: 1 },
