@@ -50,6 +50,13 @@ const BUMP_CARRY = 0.22;
 const BUMP_MAX = 220;
 const BUMP_MS = 340;
 /** 緊張跺腳：每隔多久跺一次（會再加一點隨機，大家才不會同時跺）、一次跺多久、一秒跺幾下 */
+/** 點兩下：第二下要在第一下放開後多久內、離第一下多近（螢幕像素）才算 */
+const DOUBLE_TAP_MS = 400;
+const DOUBLE_TAP_DIST = 40;
+const clock = () => {
+  'worklet';
+  return Date.now();
+};
 const FRET = {
   1: { every: 20_000, length: 1600, beats: 1.6 },
   2: { every: 8_000, length: 2600, beats: 2.4 },
@@ -170,6 +177,8 @@ export function CanvasItem({
   // 正在緊張跺腳；被點過之後下一次就不跺（安靜一陣子）
   const fretting = useSharedValue(false);
   const calmed = useSharedValue(false);
+  // 上一次點一下的時間和位置（螢幕座標），用來認點兩下
+  const lastTap = useSharedValue({ at: 0, x: 0, y: 0 });
   const reduced = useReducedMotion();
   const goal = useRef<Geometry>({ x: spot.x, y: spot.y, w: spot.w, h: spot.h });
   const wasQueued = useRef(queued);
@@ -436,7 +445,10 @@ export function CanvasItem({
     .minDuration(450)
     .onStart(() => scheduleOnRN(onLongPress, id));
   // 點一下：正在跺腳的話先收起腳、站回原本的位置，下一次也不跺（安靜一陣子）
-  const tap = Gesture.Tap().onEnd(() => {
+  // 點兩下自己算時間，不用手勢套件的 numberOfTaps(2)：手機瀏覽器上那個常常認不出來，
+  // 而且點一下也不用先等半秒看看是不是點兩下，選取馬上有反應；多選時點兩下也只是加入 / 拿掉
+  const tap = Gesture.Tap().onEnd((e, success) => {
+    if (!success) return;
     if (fretting.get()) {
       fretting.set(false);
       calmed.set(true);
@@ -445,15 +457,18 @@ export function CanvasItem({
       legs.set(withTiming(0, { duration: LEG_DOWN }));
       stand.set(withTiming(0, { duration: LEG_DOWN }));
     }
+    const now = clock();
+    const last = lastTap.get();
+    if (!multi && now - last.at < DOUBLE_TAP_MS && Math.hypot(e.absoluteX - last.x, e.absoluteY - last.y) < DOUBLE_TAP_DIST) {
+      lastTap.set({ at: 0, x: 0, y: 0 });
+      scheduleOnRN(onOpen, id);
+      return;
+    }
+    lastTap.set({ at: now, x: e.absoluteX, y: e.absoluteY });
     scheduleOnRN(onTap, id);
   });
-  // 多選時點一下就要馬上加入 / 拿掉，不用等看看是不是點兩下
-  const doubleTap = Gesture.Tap()
-    .enabled(!multi)
-    .numberOfTaps(2)
-    .onEnd(() => scheduleOnRN(onOpen, id));
 
-  const gesture = Gesture.Race(drag, longPress, Gesture.Exclusive(doubleTap, tap));
+  const gesture = Gesture.Race(drag, longPress, tap);
 
   const boxStyle = useAnimatedStyle(() => ({
     left: x.get(),
