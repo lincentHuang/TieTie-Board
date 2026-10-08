@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import { FONT_DISPLAY } from '@/lib/fonts';
+
 /** 手帳文具風配色：淡紫方格紙＋草莓牛奶粉＋薄荷＋奶油黃，文字用深莓紫取代黑色 */
 export const C = {
   bg: '#FBF7FF',
@@ -35,7 +37,7 @@ export const C = {
 };
 
 /** 粉圓體只有一種粗細，搭配時不要再設 fontWeight */
-export const F = { display: 'Huninn_400Regular' };
+export const F = { display: FONT_DISPLAY };
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
 

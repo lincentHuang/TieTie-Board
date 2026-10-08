@@ -1,9 +1,10 @@
 import { getApps, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, signInAnonymously, signInWithCustomToken, type User } from 'firebase/auth';
-import { connectFirestoreEmulator, getFirestore } from 'firebase/firestore';
+import { connectFirestoreEmulator, getFirestore, initializeFirestore } from 'firebase/firestore';
 
 import { postApi } from './api';
 import { canLoginWithGoogle, createAuth, linkGoogle } from './firebase-auth';
+import { firestoreSettings } from './firebase-cache';
 
 export { canLoginWithGoogle };
 
@@ -21,10 +22,12 @@ const emulatorHost = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST;
 
 export const firebaseConfigured = Boolean(config.projectId && (config.apiKey || emulatorHost));
 
-const app = getApps()[0] ?? initializeApp(firebaseConfigured ? config : { projectId: 'demo-unconfigured', apiKey: 'x' });
+const existing = getApps()[0];
+const app = existing ?? initializeApp(firebaseConfigured ? config : { projectId: 'demo-unconfigured', apiKey: 'x' });
 
 export const auth = createAuth(app);
-export const db = getFirestore(app);
+// 開發時重新整理模組會再跑一次，已經初始化過就直接拿
+export const db = existing ? getFirestore(app) : initializeFirestore(app, firestoreSettings);
 
 if (emulatorHost) {
   connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });

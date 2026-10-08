@@ -49,6 +49,7 @@ import {
   type Member,
   type MemberProfile,
   type QuickAlert,
+  type Task,
 } from './types';
 
 /**
@@ -148,6 +149,18 @@ const toAttachments = (v: unknown): Attachment[] =>
       ? [{ id: f.id, name: f.name, size: f.size, mime: str(f.mime, 'application/octet-stream') }]
       : [],
   );
+
+/** 待辦清單：id 要是英數字（打勾時拿來當欄位名稱），不對的整項不要 */
+const toTasks = (v: unknown): Task[] =>
+  (Array.isArray(v) ? v : []).flatMap((t) =>
+    isRecord(t) && typeof t.id === 'string' && /^[A-Za-z0-9]{1,24}$/.test(t.id) && typeof t.text === 'string'
+      ? [{ id: t.id, text: t.text }]
+      : [],
+  );
+
+/** 打勾紀錄：task id → 打勾的人 */
+const toChecked = (v: unknown): Record<string, string> =>
+  isRecord(v) ? Object.fromEntries(Object.entries(v).filter((e): e is [string, string] => typeof e[1] === 'string')) : {};
 
 const toGroup = (d: Record<string, unknown> | undefined): GroupInfo => ({
   name: str(d?.name, '公布欄'),
@@ -279,6 +292,8 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
     photos: strList(d.photos),
     carousel: d.carousel === true,
     files: toAttachments(d.files),
+    tasks: toTasks(d.tasks),
+    checked: toChecked(d.checked),
     priority: oneOf(PRIORITIES, d.priority, 'none'),
     dueAt: millis(d.dueAt),
     status: oneOf(STATUSES, d.status, 'none'),
@@ -295,7 +310,7 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
 export const watchItems = (gid: string, cb: (items: BoardItem[]) => void) =>
   onSnapshot(itemsRef(gid), (s) => cb(s.docs.map((d) => toItem(d.id, d.data()))));
 
-export type NewItem = Omit<BoardItem, 'id' | 'createdAt' | 'ackBy' | 'editors'>;
+export type NewItem = Omit<BoardItem, 'id' | 'createdAt' | 'ackBy' | 'editors' | 'checked'>;
 
 const toFirestore = (patch: Partial<BoardItem>) => {
   const { dueAt, ...rest } = patch;
@@ -304,6 +319,8 @@ const toFirestore = (patch: Partial<BoardItem>) => {
   delete data.id;
   delete data.createdAt;
   delete data.ackBy;
+  // 打勾不是內容，用 checkTask 一項一項改（才不會蓋掉別人剛勾的）
+  delete data.checked;
   // 誰能改只能透過作者同意編輯申請（approveEditRequest）加上去
   delete data.editors;
   // Firestore 不接受 undefined
@@ -336,9 +353,20 @@ export async function organizeItems(gid: string, patches: { id: string; patch: P
   await batch.commit();
 }
 
-/** 內容：作者、房主、作者同意過的人可以改（Firestore 規則也會擋）。resetAcks = 讓大家重新確認 */
-export const editItem = (gid: string, id: string, patch: Partial<BoardItem>, resetAcks = false) =>
-  updateDoc(doc(itemsRef(gid), id), { ...toFirestore(patch), ...(resetAcks ? { ackBy: {} } : null) });
+/** 待辦打勾 / 取消：任何成員都可以；只改這一項，別人同時勾別項不會被蓋掉 */
+export const checkTask = (gid: string, id: string, taskId: string, uid: string | null) =>
+  updateDoc(doc(itemsRef(gid), id), { [`checked.${taskId}`]: uid ?? deleteField() });
+
+/**
+ * 內容：作者、房主、作者同意過的人可以改（Firestore 規則也會擋）。resetAcks = 讓大家重新確認；
+ * dropChecks = 被刪掉的待辦，順便清掉它們的打勾紀錄（一項一項刪，別人剛勾的其他項不受影響）
+ */
+export const editItem = (gid: string, id: string, patch: Partial<BoardItem>, resetAcks = false, dropChecks: string[] = []) =>
+  updateDoc(doc(itemsRef(gid), id), {
+    ...toFirestore(patch),
+    ...(resetAcks ? { ackBy: {} } : null),
+    ...Object.fromEntries(dropChecks.map((taskId) => [`checked.${taskId}`, deleteField()])),
+  });
 
 export const acknowledge = (gid: string, id: string, uid: string) =>
   updateDoc(doc(itemsRef(gid), id), { [`ackBy.${uid}`]: serverTimestamp() });

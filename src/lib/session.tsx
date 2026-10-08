@@ -1,11 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 
 import { newAccountBoards, rememberBoard, withAccountBoards } from './account-boards';
 import { errorMessage } from './errors';
-import { currentAccount, ensureSignedIn, firebaseConfigured } from './firebase';
+import { currentAccount, ensureSignedIn, firebaseConfigured, signedInUid } from './firebase';
 import { forgetLineLogin, lineIdentity, loginWithLine as openLineLogin } from './liff';
+import { joinCodeFrom } from './line';
 import { signInWithGoogle, signInWithLine, syncProfile, toProfile, type SignedIn } from './sign-in';
 import type { Boards } from './types';
 
@@ -110,6 +112,34 @@ async function settle(saved: Saved, next: SignedIn, account: AccountKind): Promi
   return { uid, account, nickname: profile.name, avatarUrl: profile.avatarUrl, groupId, groupIds, pendingIds };
 }
 
+const ACCOUNT_KINDS: AccountKind[] = ['anonymous', 'line', 'google'];
+const asAccount = (v: string | null): AccountKind =>
+  ACCOUNT_KINDS.find((k) => k === v) ?? 'anonymous';
+
+/** 記下這次登入的是誰，下次打開先用它直接顯示公布欄 */
+const saveIdentity = (uid: string, account: AccountKind) =>
+  AsyncStorage.multiSet([
+    ['uid', uid],
+    ['account', account],
+  ]);
+
+/** 是點邀請連結打開的：要用確定的身分加入，得等登入完成，不能先用上次的身分 */
+async function openedWithInvite() {
+  const url = await Linking.getInitialURL().catch(() => null);
+  return url ? joinCodeFrom(Linking.parse(url).queryParams ?? {}) !== null : false;
+}
+
+/**
+ * 上次打開的人跟現在 Firebase 記得的是同一個，而且有公布欄可以打開：先直接顯示（像打開 LINE 自己的東西一樣不用等），
+ * LINE 登入確認、帳號上的清單合併在背景進行，好了再更新
+ */
+async function quickStart(saved: Saved, uid: string | null, account: string | null): Promise<Started | null> {
+  if (!uid || !saved.groupId || !saved.groupIds.includes(saved.groupId)) return null;
+  const [current, invite] = await Promise.all([signedInUid(), openedWithInvite()]);
+  if (current !== uid || invite) return null;
+  return { ...saved, uid, account: asAccount(account) };
+}
+
 const boardsOf = ({ groupIds, pendingIds }: Boards): Boards => ({ groupIds, pendingIds });
 
 /**
@@ -189,6 +219,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [status, uid, groupIds, pendingIds]);
 
+  // 記下這次登入的是誰（換帳號時也會更新），下次打開用 quickStart 直接顯示
+  useEffect(() => {
+    if (status !== 'ready' || !uid) return;
+    saveIdentity(uid, account).catch((e) => console.warn('儲存登入狀態失敗', e));
+  }, [status, uid, account]);
+
   const apply = (next: Started) => {
     setUid(next.uid);
     setNickname(next.nickname);
@@ -203,17 +239,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         if (!firebaseConfigured) throw new Error('尚未設定 Firebase（請參考 README 建立 .env）');
-        const [[, nick], [, gid], [, ids], [, avatar], [, pending]] = await AsyncStorage.multiGet([
-          'nickname',
-          'groupId',
-          'groupIds',
-          'avatarUrl',
-          'pendingGroupIds',
-        ]);
+        const [[, nick], [, gid], [, ids], [, avatar], [, pending], [, lastUid], [, lastAccount]] =
+          await AsyncStorage.multiGet(['nickname', 'groupId', 'groupIds', 'avatarUrl', 'pendingGroupIds', 'uid', 'account']);
         const groupIds = parseGroupIds(ids, gid);
         const pendingIds = parseGroupIds(pending, null).filter((id) => !groupIds.includes(id));
-        apply(await startSession({ nickname: nick, avatarUrl: avatar, groupId: gid, groupIds, pendingIds }));
+        const saved: Saved = { nickname: nick, avatarUrl: avatar, groupId: gid, groupIds, pendingIds };
+        const quick = await quickStart(saved, lastUid, lastAccount).catch(() => null);
+        if (!quick) {
+          apply(await startSession(saved));
+          setStatus('ready');
+          return;
+        }
+        apply(quick);
         setStatus('ready');
+        // 背景確認完：已經切到別的公布欄（例如點了小工具）就留在那裡，那個公布欄不在清單裡了才換
+        startSession(saved).then(
+          (next) => {
+            apply(next);
+            setGroupId((current) => (current && next.groupIds.includes(current) ? current : next.groupId));
+          },
+          (e) => console.warn('背景登入失敗，先用上次的資料', e),
+        );
       } catch (e) {
         setError(errorMessage(e));
         setStatus('error');

@@ -13,10 +13,12 @@ import type { PickedFile } from '@/lib/documents';
 import { hasFormatting, insertLink, safeUrl, toggleHeading, wrapSelection, type Selection } from '@/lib/rich-text';
 import { MAX_FILES, MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
+import { ChecklistEditor } from './ChecklistEditor';
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
 import { PhotoPicker } from './PhotoPicker';
 import { PhotoViewer } from './PhotoViewer';
+import { cleanTasks } from './todos';
 
 export type Draft = Pick<
   BoardItem,
@@ -30,6 +32,7 @@ export type Draft = Pick<
   | 'photos'
   | 'carousel'
   | 'files'
+  | 'tasks'
   | 'status'
   | 'tags'
 >;
@@ -76,15 +79,18 @@ export function ItemEditor({
   const [progress, setProgress] = useState<number | null>(null);
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
   const isImage = draft.type === 'image';
+  /** 從工具列的「待辦」新增的：清單是主角，文字只是清單名稱 */
+  const listFirst = isNew && initial.tasks.length > 0;
 
   const save = async () => {
-    // 便利貼至少要有文字、照片或檔案
-    if (!isImage && !draft.text.trim() && !draft.photos.length && !draft.files.length) return;
+    const tasks = cleanTasks(draft.tasks);
+    // 便利貼至少要有文字、待辦、照片或檔案
+    if (!isImage && !draft.text.trim() && !tasks.length && !draft.photos.length && !draft.files.length) return;
     const uploads = draft.files.flatMap((file) => (pending[file.id] ? [{ file, bytes: pending[file.id] }] : []));
     setBusy(true);
     if (uploads.length) setProgress(0);
     try {
-      await onSave({ ...draft, text: draft.text.trim() }, uploads, setProgress);
+      await onSave({ ...draft, text: draft.text.trim(), tasks }, uploads, setProgress);
       onClose();
     } catch (e) {
       // 失敗時留在編輯畫面，剛打的內容、挑的檔案都不會不見
@@ -97,7 +103,15 @@ export function ItemEditor({
 
   const saveLabel = isNew ? (draft.priority !== 'none' ? '發布，通知大家' : '貼到白板') : '儲存';
 
-  const title = isNew ? (draft.priority !== 'none' ? '發布公告' : isImage ? '貼上圖片' : '新增便利貼') : '編輯';
+  const title = isNew
+    ? draft.priority !== 'none'
+      ? '發布公告'
+      : isImage
+        ? '貼上圖片'
+        : listFirst
+          ? '新增待辦清單'
+          : '新增便利貼'
+    : '編輯';
 
   return (
     <Sheet
@@ -133,7 +147,10 @@ export function ItemEditor({
           />
         </>
       ) : (
-        <NoteText draft={draft} autoFocus={isNew} onChange={(text) => set({ text })} />
+        <>
+          <NoteText draft={draft} autoFocus={isNew && !listFirst} listFirst={listFirst} onChange={(text) => set({ text })} />
+          <ChecklistEditor tasks={draft.tasks} focusFirst={listFirst} onChange={(tasks) => set({ tasks })} />
+        </>
       )}
 
       {!isImage ? (
@@ -220,7 +237,18 @@ export function ItemEditor({
 }
 
 /** 便利貼內容：上面一排按鈕把選到的字標成標題、重點、連結，下面預覽排出來的樣子 */
-function NoteText({ draft, autoFocus, onChange }: { draft: Draft; autoFocus: boolean; onChange: (text: string) => void }) {
+function NoteText({
+  draft,
+  autoFocus,
+  listFirst,
+  onChange,
+}: {
+  draft: Draft;
+  autoFocus: boolean;
+  /** 待辦清單：這格只是清單名稱，矮一點 */
+  listFirst: boolean;
+  onChange: (text: string) => void;
+}) {
   const text = draft.text;
   const [rawSel, setSel] = useState<Selection>({ start: text.length, end: text.length });
   /** 網頁版打字時不一定會回報游標位置，記下的位置可能超過現在的內容，先校正 */
@@ -249,12 +277,15 @@ function NoteText({ draft, autoFocus, onChange }: { draft: Draft; autoFocus: boo
 
   return (
     <>
-      <Label>內容</Label>
-      <View style={s.tools}>
-        <Tool icon="text" label="標題" onPress={() => apply(toggleHeading(text, sel))} />
-        <Tool icon="color-wand" label="重點" onPress={() => apply(wrapSelection(text, sel, '**', '**', '重點'))} />
-        <Tool icon="link" label="連結" active={linking} onPress={() => setLinking((v) => !v)} />
-      </View>
+      <Label>{listFirst ? '清單名稱（選填）' : '內容'}</Label>
+      {/* 清單名稱只是一行字，不用格式按鈕（之後按「編輯」還是可以加） */}
+      {listFirst ? null : (
+        <View style={s.tools}>
+          <Tool icon="text" label="標題" onPress={() => apply(toggleHeading(text, sel))} />
+          <Tool icon="color-wand" label="重點" onPress={() => apply(wrapSelection(text, sel, '**', '**', '重點'))} />
+          <Tool icon="link" label="連結" active={linking} onPress={() => setLinking((v) => !v)} />
+        </View>
+      )}
       {linking ? (
         <View style={s.linkRow}>
           <TextInput
@@ -280,14 +311,16 @@ function NoteText({ draft, autoFocus, onChange }: { draft: Draft; autoFocus: boo
           setSel(e.nativeEvent.selection);
           setForced(undefined);
         }}
-        placeholder={'例：週六 9:00 全家大掃除\n記得先把自己房間收好'}
+        placeholder={listFirst ? '例：週末採買' : '例：週六 9:00 全家大掃除\n記得先把自己房間收好'}
         placeholderTextColor="#B9B2CF"
         multiline
         autoFocus={autoFocus && !linking}
-        style={[s.input, { backgroundColor: draft.color, fontSize: Math.min(draft.fontSize, 28), minHeight: 120 }]}
+        style={[s.input, { backgroundColor: draft.color, fontSize: Math.min(draft.fontSize, 28), minHeight: listFirst ? 60 : 120 }]}
       />
       <Text style={s.hint}>
-        {linking
+        {listFirst
+          ? '會顯示在卡片最上面；不寫的話就叫「待辦清單」。'
+          : linking
           ? picked
             ? '選到的字會變成連結，大家點一下就打開網址。'
             : '沒選字的話直接放網址；先選字再按「加入」，那幾個字就會變成連結。'

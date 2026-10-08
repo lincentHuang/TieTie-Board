@@ -12,6 +12,15 @@
     <meta name="apple-mobile-web-app-title" content="貼貼公布欄" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- 一打開就先跟會用到的伺服器連線（字型、資料庫、LINE 登入），等 JS 下載完時已經連好了 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" />
+    <link rel="preconnect" href="https://api.line.me" />
+    <link rel="dns-prefetch" href="https://securetoken.googleapis.com" />
+    <link rel="dns-prefetch" href="https://identitytoolkit.googleapis.com" />
+    <!-- 粉圓體：Google Fonts 切成很多小檔，只下載畫面上用到的字；不擋住畫面，下載好之前先用系統字型（src/lib/fonts.ts） -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&display=swap" media="print" onload="this.media='all'" />
     <script>
       // Chrome「可以安裝了」的通知可能在 App 載入完之前就來，先接住，
       // 等使用者按「安裝」再跳出來（src/features/settings/install.ts）
@@ -40,6 +49,39 @@
         height: 100%;
         flex: 1;
       }
+      body {
+        margin: 0;
+        background: #fbf7ff;
+      }
+      /* JS 還在下載時先顯示的開場畫面（React 畫出來時會整個換掉） */
+      #boot {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #fbf7ff;
+        font-family: Huninn, sans-serif;
+        color: #4b3f6b;
+        font-size: 18px;
+      }
+      #boot img {
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
+        animation: boot-bob 1.2s ease-in-out infinite;
+      }
+      @keyframes boot-bob {
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot img {
+          animation: none;
+        }
+      }
     </style>
   </head>
 
@@ -49,6 +91,11 @@
       You need to enable JavaScript to run this app.
     </noscript>
     <!-- The root element for your Expo app. -->
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot">
+        <img src="/icons/icon-192.png" alt="" />
+        <div>貼貼公布欄</div>
+      </div>
+    </div>
   </body>
 </html>

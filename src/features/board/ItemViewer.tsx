@@ -13,13 +13,18 @@ import {
   STATUS_META,
   isAckedBy,
   isAnnouncement,
+  isTaskDone,
   tagColor,
+  taskProgress,
   viewablePhotos,
   type BoardItem,
   type Member,
+  type Task,
 } from '@/lib/types';
 
+import { TaskRow } from './Checklist';
 import { PhotoViewer } from './PhotoViewer';
+import { checkerName } from './todos';
 
 /** 編輯按鈕要顯示什麼：可以直接改、要請作者同意、已經送出申請在等 */
 export type EditAccess = 'edit' | 'ask' | 'waiting';
@@ -36,6 +41,7 @@ export function ItemViewer({
   now,
   access,
   onAck,
+  onToggleTask,
   onEdit,
   onClose,
 }: {
@@ -46,6 +52,8 @@ export function ItemViewer({
   now: number;
   access: EditAccess;
   onAck: () => void;
+  /** 待辦打勾 / 取消（大家都可以） */
+  onToggleTask: (task: Task, done: boolean) => void;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -55,7 +63,16 @@ export function ItemViewer({
   const pending = !isAckedBy(item, uid);
   const photos = viewablePhotos(item);
   const unread = announce ? members.filter((m) => !isAckedBy(item, m.uid)) : [];
-  const title = announce ? `${item.priority === 'urgent' ? '⚠️' : '📢'} ${meta.label}公告` : item.type === 'image' ? '📷 照片' : item.dueAt ? '📅 活動' : '📝 便利貼';
+  const title = announce
+    ? `${item.priority === 'urgent' ? '⚠️' : '📢'} ${meta.label}公告`
+    : item.type === 'image'
+      ? '📷 照片'
+      : item.dueAt
+        ? '📅 活動'
+        : item.tasks.length
+          ? '☑️ 待辦清單'
+          : '📝 便利貼';
+  const progress = taskProgress(item);
 
   const edit =
     access === 'edit'
@@ -99,6 +116,29 @@ export function ItemViewer({
         <View style={[s.paper, item.type === 'note' && { backgroundColor: item.color === 'transparent' ? '#FFF' : item.color }]}>
           <RichText selectable linkable text={item.text} fontSize={19} lineHeight={28} style={[s.text, item.status === 'done' && s.doneText]} />
         </View>
+      ) : null}
+
+      {item.tasks.length ? (
+        <>
+          <Label>
+            待辦清單・做完 {progress.done}/{progress.total}
+          </Label>
+          {/* 照作者排的順序，勾了不會跳位置，才不會勾錯 */}
+          <View>
+            {item.tasks.map((t) => {
+              const done = isTaskDone(item, t.id);
+              return (
+                <TaskRow
+                  key={t.id}
+                  text={t.text}
+                  done={done}
+                  by={done ? checkerName(item, t.id, uid, members) : undefined}
+                  onToggle={() => onToggleTask(t, !done)}
+                />
+              );
+            })}
+          </View>
+        </>
       ) : null}
 
       {item.type === 'note' && photos.length ? (

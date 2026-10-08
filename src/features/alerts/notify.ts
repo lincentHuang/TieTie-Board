@@ -91,7 +91,7 @@ export function notifyPerson(gid: string, toUid: string, title: string, body: st
 }
 
 /** 小工具上看得到的欄位 */
-export type WidgetFields = Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files' | 'priority' | 'dueAt'>;
+export type WidgetFields = Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files' | 'tasks' | 'priority' | 'dueAt'>;
 
 const onWidget = (i: WidgetFields | null): i is WidgetFields => i !== null && (i.priority !== 'none' || i.dueAt !== null);
 const sameOnWidget = (a: WidgetFields, b: WidgetFields) =>

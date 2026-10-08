@@ -63,7 +63,8 @@ export default function Home() {
   }
   return session.groupId ? (
     <BoardScreen
-      key={session.groupId}
+      // 背景登入完換了帳號（例如第一次在 LINE 裡打開）也要整個重新載入
+      key={`${session.uid}:${session.groupId}`}
       // 要切換公布欄時，等切過去再打開，通報才會發到對的公布欄
       quickAlert={alert === '1' && !board}
       onCloseQuickAlert={() => router.setParams({ alert: undefined })}

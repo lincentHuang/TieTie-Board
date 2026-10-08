@@ -117,8 +117,9 @@ export function Canvas({
   const ignorePan = useSharedValue(false);
   // 多選時整批一起拖：大家都照著同一個位移走
   const groupDrag = useSharedValue<GroupDrag>({ on: false, dx: 0, dy: 0 });
-  // 正在被拖的項目：撞到的會被推開
+  // 正在被拖的項目：快速撞到的會被推開；慢慢碰到的會被跨過去（stepOver = 正被跨著幾張）
   const hit = useSharedValue<Hit>({ on: false, id: '', x: 0, y: 0, w: 0, h: 0, vx: 0, vy: 0 });
+  const stepOver = useSharedValue(0);
   const reduced = useReducedMotion();
   /** 沒看的公告走到哪了（只在自己的畫面上，不會存起來；看過就走回原位） */
   const [wander, setWander] = useState<Record<string, Point>>({});
@@ -491,6 +492,7 @@ export function Canvas({
                   busy={itemBusy}
                   group={groupDrag}
                   hit={hit}
+                  stepOver={stepOver}
                   selected={picked}
                   multi={multi}
                   // 排隊時不能拖；多選、用手指時只有選起來的能拖；用滑鼠時直接拖

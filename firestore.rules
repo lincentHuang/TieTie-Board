@@ -34,6 +34,13 @@ service cloud.firestore {
       return !('files' in d) || (d.files is list && d.files.size() <= 5);
     }
 
+    // 待辦清單可以沒有（舊資料、一般便利貼），有的話最多 30 項；
+    // 打勾紀錄（task id → 打勾的人）可以沒有，有的話是 map（被刪掉的待辦會順便清掉，留一點餘裕）
+    function validTasks(d) {
+      return (!('tasks' in d) || (d.tasks is list && d.tasks.size() <= 30))
+        && (!('checked' in d) || (d.checked is map && d.checked.size() <= 60));
+    }
+
     // 作者同意可以改內容的人：可以沒有（舊資料、沒人申請過），有的話是名單
     function validEditors(d) {
       return !('editors' in d) || (d.editors is list && d.editors.size() <= 50);
@@ -43,13 +50,14 @@ service cloud.firestore {
     // 不能改作者、類型、建立時間、誰能改（editors 只有作者能加）；ackBy 只能清空（改了公告，大家要重新確認）
     function validContentEdit() {
       return onlyChanges(['x', 'y', 'w', 'h', 'z', 'text', 'color', 'fontSize', 'imageData', 'photos', 'carousel',
-          'files', 'priority', 'dueAt', 'status', 'tags', 'ackBy'])
+          'files', 'tasks', 'checked', 'priority', 'dueAt', 'status', 'tags', 'ackBy'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ackBy'])
           || request.resource.data.ackBy == {})
         && request.resource.data.priority in ['none', 'important', 'urgent']
         && validOrganize(request.resource.data)
         && validPhotos(request.resource.data)
-        && validFiles(request.resource.data);
+        && validFiles(request.resource.data)
+        && validTasks(request.resource.data);
     }
 
     // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE / Google 的大頭貼網址（會顯示在每個人的畫面上）
@@ -203,13 +211,15 @@ service cloud.firestore {
           && (!('editors' in request.resource.data) || request.resource.data.editors == [])
           && validOrganize(request.resource.data)
           && validPhotos(request.resource.data)
-          && validFiles(request.resource.data);
+          && validFiles(request.resource.data)
+          && validTasks(request.resource.data);
 
         // 作者：可以改內容、刪除，也可以同意別人來改（加進 editors）
         allow update: if signedIn() && resource.data.authorId == request.auth.uid
           && validOrganize(request.resource.data)
           && validPhotos(request.resource.data)
           && validFiles(request.resource.data)
+          && validTasks(request.resource.data)
           && validEditors(request.resource.data);
 
         // 房主：可以改所有人的內容；作者同意過的人（editors）：可以改那一張的內容
@@ -220,10 +230,11 @@ service cloud.firestore {
         // 作者和房主可以刪除
         allow delete: if signedIn() && (resource.data.authorId == request.auth.uid || isOwner(gid));
 
-        // 其他成員：可以移動 / 調整大小 / 調整圖層（像 Figma 共同編輯），也可以改狀態、標籤
+        // 其他成員：可以移動 / 調整大小 / 調整圖層（像 Figma 共同編輯），也可以改狀態、標籤、待辦打勾
         allow update: if signedIn() && isMember(gid)
-          && onlyChanges(['x', 'y', 'w', 'h', 'z', 'status', 'tags'])
-          && validOrganize(request.resource.data);
+          && onlyChanges(['x', 'y', 'w', 'h', 'z', 'status', 'tags', 'checked'])
+          && validOrganize(request.resource.data)
+          && validTasks(request.resource.data);
 
         // 其他成員：只能在 ackBy 裡加上「自己已確認」
         allow update: if signedIn() && isMember(gid) && onlyChanges(['ackBy'])

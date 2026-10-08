@@ -22,6 +22,7 @@ import {
   acknowledge,
   acknowledgeAll,
   addItem,
+  checkTask,
   deleteItem,
   deleteItems,
   editItem,
@@ -51,6 +52,7 @@ import {
   type BoardItem,
   type Geometry,
   type Member,
+  type Task,
 } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
 
@@ -64,6 +66,9 @@ import { ItemViewer } from './ItemViewer';
 import { OrganizeManySheet, OrganizeSheet } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
+import { TodoPill } from './TodoPill';
+import { TodoSheet } from './TodoSheet';
+import { newTask, openTodos, sameTasks, type TodoEntry } from './todos';
 import { useBoard } from './useBoard';
 import { useEditRequests } from './useEditRequests';
 import { useJoinRequests } from './useJoinRequests';
@@ -71,7 +76,7 @@ import { useSelection } from './useSelection';
 import { useViewPrefs } from './useViewPrefs';
 
 type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number } };
-type Panel = 'none' | 'stickers' | 'announcements' | 'calendar' | 'invite' | 'boards' | 'alert' | 'settings';
+type Panel = 'none' | 'stickers' | 'announcements' | 'calendar' | 'todos' | 'invite' | 'boards' | 'alert' | 'settings';
 type ToolDef = { icon: IconName; label: string; color: string; onPress: () => void };
 
 const TOOLBAR_HEIGHT = 76;
@@ -79,7 +84,10 @@ const TOOLBAR_HEIGHT = 76;
 const PHOTO_ROOM = 130;
 /** 有附件時多留一排放檔名 */
 const FILE_ROOM = 40;
-const extraRoom = (d: Pick<Draft, 'photos' | 'files'>) => (d.photos.length ? PHOTO_ROOM : 0) + (d.files.length ? FILE_ROOM : 0);
+/** 待辦清單每一項多長高一點 */
+const TASK_ROOM = 30;
+const extraRoom = (d: Pick<Draft, 'photos' | 'files' | 'tasks'>) =>
+  (d.photos.length ? PHOTO_ROOM : 0) + (d.files.length ? FILE_ROOM : 0) + d.tasks.length * TASK_ROOM;
 
 export function BoardScreen({
   quickAlert = false,
@@ -153,10 +161,21 @@ export function BoardScreen({
   const mySentAlerts =
     digests?.find((d) => d.gid === gid)?.alerts.filter((a) => a.authorId === uid && isAlertActive(a, now)) ?? [];
   const unreadOf = (memberUid: string) => items.filter((i) => isAnnouncement(i) && !isAckedBy(i, memberUid)).length;
+  const todos = openTodos(items, now);
+  // 手機上公告、待辦、行程三個膠囊都有：行程縮成只放倒數，前兩個才看得到字
+  const crowded = compact && pending.length > 0 && todos.length > 0 && nextEvent !== undefined;
 
   const ack = (item: BoardItem) => acknowledge(gid, item.id, uid).catch((e) => showError('確認失敗', e));
   const ackMany = (list: BoardItem[]) =>
     acknowledgeAll(gid, list.map((i) => i.id), uid).catch((e) => showError('確認失敗', e));
+
+  /** 待辦打勾 / 取消：清單裡的一項記是誰勾的；狀態是待辦的便利貼就把狀態改成完成（取消的話改回待辦） */
+  const toggleTask = (item: BoardItem, task: Task, done: boolean) =>
+    checkTask(gid, item.id, task.id, done ? uid : null).catch((e) => showError('打勾失敗', e));
+  const tick = (entry: TodoEntry, done: boolean) => {
+    if (entry.task) return toggleTask(entry.item, entry.task, done);
+    organizeItem(gid, entry.item.id, { status: done ? 'done' : 'todo' }).catch((e) => showError('打勾失敗', e));
+  };
 
   /** 公告 / 活動有變化時，讓其他人的桌面小工具跟著更新（新公告會跳通知） */
   const pushCtx = { gid, uid, boardName: groupName, authorName: session.nickname ?? '' };
@@ -197,6 +216,28 @@ export function BoardScreen({
         photos: [],
         carousel: false,
         files: [],
+        tasks: [],
+        status: 'none',
+        tags: [],
+      },
+    });
+
+  /** 待辦清單：一張薄荷色便利貼，一打開就從第一項開始寫 */
+  const startList = () =>
+    setEditing({
+      id: null,
+      size: { w: 240, h: 110 },
+      draft: {
+        type: 'note',
+        text: '',
+        color: NOTE_COLORS[3],
+        fontSize: 20,
+        priority: 'none',
+        dueAt: null,
+        photos: [],
+        carousel: false,
+        files: [],
+        tasks: [newTask()],
         status: 'none',
         tags: [],
       },
@@ -222,6 +263,7 @@ export function BoardScreen({
           photos: [],
           carousel: false,
           files: [],
+          tasks: [],
           status: 'none',
           tags: [],
         },
@@ -245,6 +287,7 @@ export function BoardScreen({
         photos: [],
         carousel: false,
         files: [],
+        tasks: [],
         status: 'none',
         tags: [],
         ...placeNew(120, 120),
@@ -292,29 +335,33 @@ export function BoardScreen({
       askEdit(item);
       return;
     }
-    const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, status, tags } = item;
+    const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, tasks, status, tags } = item;
     setEditing({
       id,
-      draft: { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, status, tags },
+      draft: { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, tasks, status, tags },
     });
   };
 
   /** 編輯視窗按下儲存（檔案已經傳好了） */
   const saveDraft = async (target: Editing, draft: Draft) => {
     if (target.id) {
-      // 公告的內容、照片、檔案、時間或重要程度改了 → 大家要重新確認（只換封面、開關輪播不算）
+      // 公告的內容、待辦、照片、檔案、時間或重要程度改了 → 大家要重新確認（只換封面、開關輪播不算）
       const old = target.draft;
       const changed =
         draft.text !== old.text ||
+        !sameTasks(draft.tasks, old.tasks) ||
         !samePhotoSet(draft.photos, old.photos) ||
         !sameFileSet(draft.files, old.files) ||
         draft.dueAt !== old.dueAt ||
         draft.priority !== old.priority;
-      // 第一次加照片 / 檔案就把卡片拉長；全部拿掉就縮回來
-      const h = items.find((i) => i.id === target.id)?.h;
+      // 第一次加照片 / 檔案、多寫幾項待辦就把卡片拉長；拿掉就縮回來
+      const current = items.find((i) => i.id === target.id);
+      const h = current?.h;
       const grow = extraRoom(draft) - extraRoom(old);
       const resize = h !== undefined && grow ? { h: Math.max(120, h + grow) } : null;
-      await editItem(gid, target.id, { ...draft, ...resize }, changed && draft.priority !== 'none');
+      // 刪掉的待辦：打勾紀錄也一起清掉
+      const dropChecks = Object.keys(current?.checked ?? {}).filter((id) => !draft.tasks.some((t) => t.id === id));
+      await editItem(gid, target.id, { ...draft, ...resize }, changed && draft.priority !== 'none', dropChecks);
       discardFiles(gid, old.files.filter((f) => !draft.files.some((g) => g.id === f.id)));
       notifyBoardChange(pushCtx, old, draft);
     } else {
@@ -433,6 +480,7 @@ export function BoardScreen({
         ])
       : pick([
           { icon: 'document-text', label: '便利貼', color: '#F5B800', onPress: () => startNote(false) },
+          { icon: 'checkbox', label: '待辦', color: C.mint, onPress: startList },
           { icon: 'megaphone', label: '公告', color: C.primary, onPress: () => startNote(true) },
           { icon: 'image', label: '照片', color: C.sky, onPress: startImage },
           { icon: 'happy', label: '貼圖', color: C.mint, onPress: () => setPanel('stickers') },
@@ -491,7 +539,7 @@ export function BoardScreen({
         onLocate={locate}
       />
 
-      {/* header 第二行：等我確認的公告、下一個行程，壓成一行小膠囊；點了打開公告與行程 */}
+      {/* header 第二行（通知列）：等我確認的公告、還沒做完的待辦（圈圈直接打勾）、下一個行程，壓成一行小膠囊 */}
       <View style={[s.subHeader, compact && s.subHeaderCompact]}>
         {pending.length > 0 ? (
           <Squishy
@@ -504,17 +552,25 @@ export function BoardScreen({
             </Text>
           </Squishy>
         ) : null}
+        <TodoPill todos={todos} style={s.pillGrow} onTick={(entry) => tick(entry, true)} onOpen={() => setPanel('todos')} />
         {nextEvent ? (
-          <Squishy style={[s.pill, { backgroundColor: C.lavender }]} onPress={() => locate(nextEvent)}>
+          <Squishy
+            style={[crowded ? s.pillShape : s.pill, { backgroundColor: C.lavender }]}
+            onPress={() => locate(nextEvent)}
+            accessibilityLabel={`下一個行程：${whenLabel(nextEvent.dueAt, now)} ${itemTitle(nextEvent)}`}>
             <Text style={s.pillText} numberOfLines={1}>
-              📅 {whenLabel(nextEvent.dueAt, now)} {itemTitle(nextEvent)}・{countdownLabel(nextEvent.dueAt, now)}
+              {/* 三個膠囊擠在手機上時，行程只放倒數 */}
+              📅{' '}
+              {crowded
+                ? countdownLabel(nextEvent.dueAt, now)
+                : `${whenLabel(nextEvent.dueAt, now)} ${itemTitle(nextEvent)}・${countdownLabel(nextEvent.dueAt, now)}`}
             </Text>
           </Squishy>
         ) : null}
-        {pending.length === 0 && !nextEvent ? (
+        {pending.length === 0 && !nextEvent && todos.length === 0 ? (
           <Squishy style={[s.pill, s.pillQuiet]} onPress={() => setPanel('announcements')}>
             <Text style={[s.pillText, { color: C.sub }]} numberOfLines={1}>
-              ✓ 公告都看過了・沒有接下來的行程
+              ✓ 公告都看過了・沒有待辦和行程
             </Text>
           </Squishy>
         ) : null}
@@ -623,6 +679,7 @@ export function BoardScreen({
           now={now}
           access={canEdit(inspecting) ? 'edit' : askedFor(inspecting) ? 'waiting' : 'ask'}
           onAck={() => ack(inspecting)}
+          onToggleTask={(task, done) => toggleTask(inspecting, task, done)}
           onEdit={() => {
             setInspectId(null);
             open(inspecting.id);
@@ -652,6 +709,16 @@ export function BoardScreen({
           members={members}
           uid={uid}
           onAck={ack}
+          onLocate={locate}
+          onClose={() => setPanel('none')}
+        />
+      ) : null}
+      {panel === 'todos' ? (
+        <TodoSheet
+          items={items}
+          members={members}
+          uid={uid}
+          onTick={tick}
           onLocate={locate}
           onClose={() => setPanel('none')}
         />
@@ -823,7 +890,10 @@ const s = StyleSheet.create({
   subHeader: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, marginBottom: 6 },
   subHeaderCompact: { paddingHorizontal: 12 },
   pill: { flex: 1, height: 32, borderRadius: 16, paddingHorizontal: 12, justifyContent: 'center' },
+  // 不設 flex：照字的寬度（網頁版的 flex: 0 會變成寬度 0）
+  pillShape: { height: 32, borderRadius: 16, paddingHorizontal: 12, justifyContent: 'center' },
   pillQuiet: { backgroundColor: '#FFF', borderWidth: 2, borderColor: C.line },
+  pillGrow: { flex: 1 },
   pillText: { color: '#FFF', fontSize: 14, fontFamily: F.display },
   emptyHint: { position: 'absolute', left: 0, right: 0, top: '38%', alignItems: 'center', paddingHorizontal: 32 },
   emptyTitle: { fontSize: 24, fontFamily: F.display, color: C.sub },

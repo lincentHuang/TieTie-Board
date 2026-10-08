@@ -8,7 +8,18 @@ import { C, F, Ionicons } from '@/components/ui';
 import { fileKind } from '@/features/files/file-kinds';
 import { countdownLabel, whenLabel } from '@/lib/dates';
 import { plainText } from '@/lib/rich-text';
-import { PRIORITY_META, STATUS_META, isAnnouncement, tagColor, type Attachment, type BoardItem } from '@/lib/types';
+import {
+  PRIORITY_META,
+  STATUS_META,
+  isAnnouncement,
+  isItemDone,
+  tagColor,
+  taskProgress,
+  type Attachment,
+  type BoardItem,
+} from '@/lib/types';
+
+import { CardTasks } from './Checklist';
 
 const TAPES = ['#FF9BB8', '#8FD9C4', '#FFD66B', '#A9C8FF', '#C9B4FF'];
 /** 輪播時每張照片停留多久 */
@@ -76,10 +87,18 @@ export function ItemBody({
       </View>
     ) : null;
 
-  // 狀態和標籤：一排小膠囊，放不下的就藏在右邊
+  // 待辦進度、狀態和標籤：一排小膠囊，放不下的就藏在右邊
+  const progress = taskProgress(item);
   const tags =
-    item.status !== 'none' || item.tags.length ? (
+    progress.total || item.status !== 'none' || item.tags.length ? (
       <View style={[s.tags, item.type === 'image' && s.tagsPhoto]}>
+        {progress.total ? (
+          <Pill
+            solid={progress.done === progress.total}
+            color={C.ok}
+            label={`☑ ${progress.done}/${progress.total}`}
+          />
+        ) : null}
         {item.status !== 'none' ? (
           <Pill solid color={STATUS_META[item.status].color} label={`${STATUS_META[item.status].icon} ${STATUS_META[item.status].label}`} />
         ) : null}
@@ -88,7 +107,8 @@ export function ItemBody({
         ))}
       </View>
     ) : null;
-  const done = item.status === 'done';
+  // 狀態標成完成、或待辦全部勾完，都蓋「完成」印章
+  const done = isItemDone(item);
   const stamp = done ? (
     <View pointerEvents="none" style={[s.stamp, { bottom: announce ? 40 : 12 }]}>
       <Text style={s.stampText}>完成</Text>
@@ -140,7 +160,17 @@ export function ItemBody({
         {header}
         {/* 文字高度不能被卡片限制：iOS 放不下時會把最後一行從字中間切掉，而不是整個字換到下一行。
             所以文字用絕對定位照自己的高度排版，多出來的由外框裁掉 */}
-        {item.text || (!item.photos.length && !item.files.length) ? (
+        {item.tasks.length ? (
+          // 有待辦清單：文字（清單名稱）和清單一起照自己的高度往下排，放不下的一樣由外框裁掉
+          <View style={s.noteBody}>
+            <View style={s.noteFlow}>
+              {item.text ? (
+                <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.flowText, done && s.doneText]} />
+              ) : null}
+              <CardTasks item={item} fontSize={item.fontSize} />
+            </View>
+          </View>
+        ) : item.text || (!item.photos.length && !item.files.length) ? (
           <View style={s.noteBody}>
             <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.noteText, done && s.doneText]} />
           </View>
@@ -262,6 +292,8 @@ const s = StyleSheet.create({
   note: { borderRadius: 18, borderWidth: 5, borderColor: '#FFFFFF', overflow: 'hidden', ...shadow },
   noteBody: { flex: 1, overflow: 'hidden' },
   noteText: { position: 'absolute', top: 0, left: 0, right: 0, padding: 12, color: C.ink, fontFamily: F.display },
+  noteFlow: { position: 'absolute', top: 0, left: 0, right: 0, padding: 12, gap: 6 },
+  flowText: { color: C.ink, fontFamily: F.display },
   // 有文字時照片佔多一點點，照片才看得清楚
   photos: { flex: 1.3, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 4 },
   coverPhoto: { flex: 1, borderRadius: 10, backgroundColor: '#0000000D' },

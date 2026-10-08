@@ -22,7 +22,14 @@ const BOARD = {
   message: '白板（board）是主畫面，其他功能不能反過來依賴它。',
 };
 const restrict = (...patterns) => ['error', { patterns }];
-const FIREBASE_FILES = ['src/lib/repo.ts', 'src/lib/firebase.ts', 'src/lib/firebase-auth.ts', 'src/lib/firebase-auth.native.ts'];
+const FIREBASE_FILES = [
+  'src/lib/repo.ts',
+  'src/lib/firebase.ts',
+  'src/lib/firebase-auth.ts',
+  'src/lib/firebase-auth.native.ts',
+  'src/lib/firebase-cache.ts',
+  'src/lib/firebase-cache.native.ts',
+];
 
 module.exports = defineConfig([
   expoConfig,

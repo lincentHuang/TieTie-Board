@@ -39,6 +39,11 @@ const LEG_DOWN = 240;
 const STRIDE = 22;
 /** 慢慢走向畫面中間時，每一小段走多久 */
 const STROLL_MS = 2400;
+/** 拖得比這個快（手指在螢幕上每秒移動的像素）才會撞開別張；比較慢就小心翼翼跨過去 */
+const BUMP_SPEED = 700;
+/** 跨過去時：腳伸長多少把身體撐高（腳長的倍數）、步伐放慢多少倍 */
+const TIPTOE_RISE = 0.5;
+const TIPTOE_STRIDE = 1.6;
 /** 被撞到：先推到不重疊的地方再多留一點縫，然後帶著撞過來的速度滑一段（最多滑多遠、滑多久） */
 const BUMP_GAP = 6;
 const BUMP_CARRY = 0.22;
@@ -50,7 +55,7 @@ const FRET = {
   2: { every: 8_000, length: 2600, beats: 2.4 },
 } as const;
 
-/** 正在被拖的項目在白板上的位置與速度（白板座標，每秒），其他項目撞到就會被推開 */
+/** 正在被拖的項目在白板上的位置與速度（白板座標，每秒），其他項目被快速撞到就會被推開、慢慢碰到就讓它跨過去 */
 export interface Hit {
   on: boolean;
   id: string;
@@ -85,8 +90,10 @@ interface Props {
   busy: SharedValue<boolean>;
   /** 整個畫布共用：多選時整批一起拖 */
   group: SharedValue<GroupDrag>;
-  /** 整個畫布共用：正在被拖的項目，撞到的會被推開 */
+  /** 整個畫布共用：正在被拖的項目，快速撞到的會被推開 */
   hit: SharedValue<Hit>;
+  /** 整個畫布共用：正在被拖的項目底下有幾張正被它跨著 */
+  stepOver: SharedValue<number>;
   selected: boolean;
   /** 長按進入的多選模式：每個項目左上角出現勾選圈，點一下是加入 / 拿掉 */
   multi: boolean;
@@ -104,7 +111,8 @@ interface Props {
 
 /**
  * 白板上的一個項目：點一下選取、選取後拖曳移動、拖四個角縮放、點兩下打開來看、長按多選；
- * 要換位置時會長出腳自己走過去，被拖著的時候腳在下面跑（拖越快跑越快），撞到別張會把它推開；
+ * 要換位置時會長出腳自己走過去，被拖著的時候腳在下面跑（拖越快跑越快），跑得快撞到別張會把它推開、
+ * 慢慢走過去就踮起腳小心翼翼跨過去；
  * 沒看的公告會一陣子就站起來緊張地跺腳，點一下就收起腳
  */
 export function CanvasItem({
@@ -119,6 +127,7 @@ export function CanvasItem({
   busy,
   group,
   hit,
+  stepOver,
   selected,
   multi,
   draggable,
@@ -154,6 +163,10 @@ export function CanvasItem({
   // 被撞開、正在滑：這時候不要被其他移動蓋掉
   const knocked = useSharedValue(false);
   const contact = useSharedValue(false);
+  // 跨過去：tiptoe 0 → 1 自己正踮著腳跨過別張；straddled 自己正被跨著、duck 0 → 1 縮一下讓它過
+  const tiptoe = useSharedValue(0);
+  const straddled = useSharedValue(false);
+  const duck = useSharedValue(0);
   // 正在緊張跺腳；被點過之後下一次就不跺（安靜一陣子）
   const fretting = useSharedValue(false);
   const calmed = useSharedValue(false);
@@ -191,22 +204,32 @@ export function CanvasItem({
     [inGroup],
   );
 
-  // 被正在拖的項目撞到：推到旁邊不重疊的地方，帶著撞過來的速度再滑一段，晃一下；停下來才存位置（大家都看得到）
+  // 被正在拖的項目碰到：
+  // - 跑得快撞過來 → 推到旁邊不重疊的地方，帶著撞過來的速度再滑一段，晃一下；停下來才存位置（大家都看得到）
+  // - 慢慢走過來 → 縮一下讓它小心翼翼跨過去，不推開；跨到一半才加速也不會被撞飛，離開了才算數
   useAnimatedReaction(
     () => hit.get(),
     (r) => {
-      if (!r.on || r.id === id || !bumpable || active.get()) {
-        contact.set(false);
-        return;
-      }
       const ix = x.get();
       const iy = y.get();
       const iw = w.get();
       const ih = h.get();
       const ox = Math.min(r.x + r.w, ix + iw) - Math.max(r.x, ix);
       const oy = Math.min(r.y + r.h, iy + ih) - Math.max(r.y, iy);
-      if (ox <= 0 || oy <= 0) {
+      if (!r.on || r.id === id || !bumpable || active.get() || ox <= 0 || oy <= 0) {
         contact.set(false);
+        if (straddled.get()) {
+          straddled.set(false);
+          stepOver.set(Math.max(0, stepOver.get() - 1));
+          duck.set(withSpring(0, { damping: 6, stiffness: 180 }));
+        }
+        return;
+      }
+      if (straddled.get()) return;
+      if (!contact.get() && Math.hypot(r.vx, r.vy) * scale.get() < BUMP_SPEED) {
+        straddled.set(true);
+        stepOver.set(stepOver.get() + 1);
+        duck.set(withTiming(1, { duration: 180 }));
         return;
       }
       // 往重疊比較少的方向推（推最少的距離），方向是離開撞過來的那張
@@ -246,6 +269,15 @@ export function CanvasItem({
       contact.set(true);
     },
     [id, bumpable, onCommit],
+  );
+
+  // 自己正被拖著、底下有別張正被跨著：踮起腳、腳伸長把身體撐高，小心翼翼跨過去
+  useAnimatedReaction(
+    () => active.get() && stepOver.get() > 0,
+    (on, was) => {
+      if (was === null || on === was) return;
+      tiptoe.set(withTiming(on ? 1 : 0, { duration: on ? 200 : 260 }));
+    },
   );
 
   // 要站的位置變了（切換模式、隊伍重排、其他人移動了它）→ 長腳走過去；自己正在拖、正在被撞開的時候不要被蓋掉
@@ -352,6 +384,7 @@ export function CanvasItem({
       fretting.set(false);
       stand.set(withTiming(0, { duration: 160 }));
       stomp.set(0);
+      stepOver.set(0);
       if (inGroup) {
         group.set({ on: true, dx: 0, dy: 0 });
         return;
@@ -372,13 +405,14 @@ export function CanvasItem({
       }
       x.set(st.x + dx);
       y.set(st.y + dy);
-      // 腳在下面跑：手指移動越多，步伐換越快；往移動的方向傾一點
+      // 腳在下面跑：手指移動越多，步伐換越快（跨過別張時放慢）；往移動的方向傾一點
       const last = runLast.get();
-      phase.set(phase.get() + (Math.hypot(e.absoluteX - last.x, e.absoluteY - last.y) / STRIDE) * Math.PI);
+      const stride = STRIDE * (1 + (TIPTOE_STRIDE - 1) * tiptoe.get());
+      phase.set(phase.get() + (Math.hypot(e.absoluteX - last.x, e.absoluteY - last.y) / stride) * Math.PI);
       runLast.set({ x: e.absoluteX, y: e.absoluteY });
       if (Math.abs(e.velocityX) > 40) dir.set(Math.sign(e.velocityX));
       lean.set(lean.get() * 0.8 + Math.max(-12, Math.min(12, e.velocityX / 140)) * 0.2);
-      // 告訴其他項目：我在這裡、跑多快，撞到的會被推開
+      // 告訴其他項目：我在這裡、跑多快，快的話撞到的會被推開、慢的話就跨過去
       hit.set({ on: true, id, x: st.x + dx, y: st.y + dy, w: w.get(), h: h.get(), vx: e.velocityX / sc, vy: e.velocityY / sc });
     })
     .onFinalize(() => {
@@ -429,19 +463,31 @@ export function CanvasItem({
   }));
 
   // 腳多長，身體就被撐高多少（腳底剛好踩在原本的底部）；每走一步上下彈一下、左右晃一下；
-  // 跺腳時身體跟著抖、每踩一下震一下；拖著跑時往前傾；被撞到時晃一下
+  // 跺腳時身體跟著抖、每踩一下震一下；拖著跑時往前傾；被撞到時晃一下；
+  // 跨過別張時被腳撐高、浮起來一點、每一步左右搖著保持平衡（不太敢往前傾）；被跨的那張縮一下
   const legLength = Math.round(Math.min(34, Math.max(16, spot.h * 0.14)));
   const walkStyle = useAnimatedStyle(() => {
     const k = stand.get();
     const st = stomp.get();
     const sp = stompPhase.get();
+    const tp = tiptoe.get();
     const beat = Math.sin(phase.get());
     const jolt = st * Math.abs(Math.cos(sp)) * legLength * 0.12;
+    const tilt = beat * 3 * k * (1 - st) + beat * 4 * tp + Math.sin(sp * 2) * 2.5 * st;
     return {
       transform: [
-        { translateY: -legLength * k - Math.abs(beat) * legLength * 0.25 * k * (1 - st) - jolt },
-        { rotate: `${beat * 3 * k * (1 - st) + Math.sin(sp * 2) * 2.5 * st + lean.get() + wobble.get()}deg` },
+        { translateY: -legLength * (k + TIPTOE_RISE * tp) - Math.abs(beat) * legLength * 0.25 * k * (1 - st) - jolt },
+        { rotate: `${tilt + lean.get() * (1 - 0.6 * tp) + wobble.get()}deg` },
+        { scale: 1 + 0.03 * tp - 0.05 * duck.get() },
       ],
+    };
+  });
+  // 跨過別張時頭上冒出的「💦」，每一步跟著抖一下
+  const sweatStyle = useAnimatedStyle(() => {
+    const tp = tiptoe.get();
+    return {
+      opacity: tp,
+      transform: [{ translateY: -Math.abs(Math.sin(phase.get())) * 3 * tp }, { scale: 0.6 + tp * 0.4 }],
     };
   });
   // 跺腳時頭上冒出的「‼️」
@@ -472,12 +518,19 @@ export function CanvasItem({
               dir={dir}
               stomp={stomp}
               stompPhase={stompPhase}
+              tiptoe={tiptoe}
             />
           ))}
         </View>
         {nervous ? (
           <Animated.Text pointerEvents="none" style={[s.fret, fretStyle]}>
             ‼️
+          </Animated.Text>
+        ) : null}
+        {/* 只有選起來的才拖得動，也才會跨過別張 */}
+        {selected && !queued ? (
+          <Animated.Text pointerEvents="none" style={[s.sweat, sweatStyle]}>
+            💦
           </Animated.Text>
         ) : null}
 
@@ -532,7 +585,10 @@ function CheckBadge({ on, scale }: { on: boolean; scale: SharedValue<number> }) 
   );
 }
 
-/** 一隻小腳：從項目底部長出來，走路時前後擺動，鞋尖朝著前進方向；跺腳時兩隻輪流抬起來用力踩 */
+/**
+ * 一隻小腳：從項目底部長出來，走路時前後擺動，鞋尖朝著前進方向；跺腳時兩隻輪流抬起來用力踩；
+ * 跨過別張時腳伸長、步子變小，往前跨的那隻高高抬起來
+ */
 function Leg({
   side,
   length,
@@ -541,6 +597,7 @@ function Leg({
   dir,
   stomp,
   stompPhase,
+  tiptoe,
 }: {
   side: -1 | 1;
   length: number;
@@ -549,15 +606,20 @@ function Leg({
   dir: SharedValue<number>;
   stomp: SharedValue<number>;
   stompPhase: SharedValue<number>;
+  tiptoe: SharedValue<number>;
 }) {
   const thick = Math.max(6, Math.round(length * 0.3));
   const legStyle = useAnimatedStyle(() => {
     const k = legs.get();
     const st = stomp.get();
+    const tp = tiptoe.get();
+    const beat = Math.sin(phase.get());
     // 抬腳：慢慢抬起、很快踩下去
     const lift = st * Math.pow(Math.max(0, Math.sin(stompPhase.get()) * side), 0.6);
-    const len = length * k * (1 - 0.45 * lift);
-    const swing = Math.sin(phase.get()) * 28 * side * (1 - st);
+    // 跨步：往前擺的那隻（往右走時腳往右擺 = 轉負的角度）縮起來，像膝蓋抬高
+    const high = tp * Math.pow(Math.max(0, -beat * side * dir.get()), 0.7);
+    const len = length * k * (1 + TIPTOE_RISE * tp) * (1 - 0.45 * lift) * (1 - 0.55 * high);
+    const swing = beat * 28 * side * (1 - st) * (1 - 0.35 * tp);
     return {
       height: len,
       opacity: k > 0.02 ? 1 : 0,
@@ -702,6 +764,8 @@ const s = StyleSheet.create({
   shoe: { position: 'absolute', backgroundColor: C.primary },
   // 放左上角，不要跟右上角「等你確認」的紅點疊在一起
   fret: { position: 'absolute', top: -30, left: -8, fontSize: 24 },
+  // 右上角往內一點，不要蓋到「等你確認」的紅點
+  sweat: { position: 'absolute', top: -28, right: 6, fontSize: 20 },
   handleHit: { position: 'absolute', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
   handleDot: { backgroundColor: '#FFF', borderColor: C.primary },
   pulse: { position: 'absolute', backgroundColor: C.primary, borderColor: '#FFF' },

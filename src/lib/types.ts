@@ -33,6 +33,10 @@ export interface BoardItem {
   files: Attachment[];
   /** 貼圖：emoji */
   sticker?: string;
+  /** 待辦清單（沒有就是空的）：寫哪幾項跟文字一樣，只有能改內容的人能改 */
+  tasks: Task[];
+  /** 打勾了的待辦：task id → 打勾的人（uid）。大家都可以勾 / 取消 */
+  checked: Record<string, string>;
 
   priority: Priority;
   /** 活動日期時間（毫秒），沒有則為 null */
@@ -49,6 +53,30 @@ export interface BoardItem {
   /** uid → 確認時間 */
   ackBy: Record<string, unknown>;
 }
+
+/** 待辦清單的一項 */
+export interface Task {
+  /** 隨機產生的英數字，也是 checked 的 key */
+  id: string;
+  text: string;
+}
+
+/** 一張最多幾項待辦、一項最多幾個字（Firestore 規則也會擋項數） */
+export const MAX_TASKS = 30;
+export const MAX_TASK_TEXT = 60;
+
+/** 用 typeof 判斷，不會被 constructor 之類的內建屬性騙到 */
+export const isTaskDone = (item: Pick<BoardItem, 'checked'>, taskId: string) => typeof item.checked[taskId] === 'string';
+
+/** 待辦清單做了幾項 */
+export const taskProgress = (item: Pick<BoardItem, 'tasks' | 'checked'>) => ({
+  done: item.tasks.filter((t) => isTaskDone(item, t.id)).length,
+  total: item.tasks.length,
+});
+
+/** 整張做完了：狀態標成完成，或待辦清單全部勾完 */
+export const isItemDone = (item: Pick<BoardItem, 'status' | 'tasks' | 'checked'>) =>
+  item.status === 'done' || (item.tasks.length > 0 && item.tasks.every((t) => isTaskDone(item, t.id)));
 
 /** 作者、房主、作者同意過的人可以改內容 */
 export const canEditItem = (item: BoardItem, uid: string, ownerId: string) =>
@@ -248,11 +276,14 @@ export const isAnnouncement = (item: BoardItem) => item.priority !== 'none';
 export const isAckedBy = (item: BoardItem, uid: string) =>
   !isAnnouncement(item) || item.authorId === uid || uid in item.ackBy;
 
-/** 取得公告的標題：標成標題的那行，沒有就用第一行（去掉格式記號）；只放了檔案就用檔名 */
-export const itemTitle = (item: Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files'>) => {
+/** 取得公告的標題：標成標題的那行，沒有就用第一行（去掉格式記號）；只寫了待辦就叫「待辦清單」；只放了檔案就用檔名 */
+export const itemTitle = (item: Pick<BoardItem, 'type' | 'text' | 'sticker' | 'photos' | 'files' | 'tasks'>) => {
   if (item.type === 'image') return richTitle(item.text) || '圖片';
   if (item.type === 'sticker') return item.sticker ?? '貼圖';
-  return richTitle(item.text) || (item.photos.length ? '照片' : item.files[0]?.name ?? '（沒有文字）');
+  return (
+    richTitle(item.text) ||
+    (item.tasks.length ? '待辦清單' : item.photos.length ? '照片' : (item.files[0]?.name ?? '（沒有文字）'))
+  );
 };
 
 /** 點開來可以放大看的照片：拍立得是那一張，便利貼是附的照片 */
@@ -266,9 +297,9 @@ export const samePhotoSet = (a: string[], b: string[]) => {
   return [...a].sort().every((p, i) => p === sorted[i]);
 };
 
-/** 排隊模式的順序（跟誰在看無關，大家看到的隊伍都一樣）：完成的排到最後，緊急 > 重要 > 一般，貼圖排最後，快到的活動在前，其餘越新越前面 */
+/** 排隊模式的順序（跟誰在看無關，大家看到的隊伍都一樣）：完成的（含待辦全部勾完的）排到最後，緊急 > 重要 > 一般，貼圖排最後，快到的活動在前，其餘越新越前面 */
 export const byQueueOrder = (now: number) => (a: BoardItem, b: BoardItem) => {
-  const done = Number(a.status === 'done') - Number(b.status === 'done');
+  const done = Number(isItemDone(a)) - Number(isItemDone(b));
   if (done) return done;
   const rank = { urgent: 2, important: 1, none: 0 };
   const pri = rank[b.priority] - rank[a.priority];
