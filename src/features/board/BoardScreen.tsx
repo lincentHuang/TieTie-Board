@@ -55,6 +55,7 @@ import {
 import { useNow } from '@/lib/use-now';
 
 import { AnnouncementsSheet } from './AnnouncementsSheet';
+import { CalendarSheet } from './CalendarSheet';
 import { Canvas, type CanvasHandle } from './Canvas';
 import { EditRequestBanner } from './EditRequestBanner';
 import { InviteSheet } from './InviteSheet';
@@ -70,7 +71,7 @@ import { useSelection } from './useSelection';
 import { useViewPrefs } from './useViewPrefs';
 
 type Editing = { draft: Draft; id: string | null; size?: { w: number; h: number } };
-type Panel = 'none' | 'stickers' | 'announcements' | 'invite' | 'boards' | 'alert' | 'settings';
+type Panel = 'none' | 'stickers' | 'announcements' | 'calendar' | 'invite' | 'boards' | 'alert' | 'settings';
 type ToolDef = { icon: IconName; label: string; color: string; onPress: () => void };
 
 const TOOLBAR_HEIGHT = 76;
@@ -458,7 +459,7 @@ export function BoardScreen({
         <Squishy onPress={() => setPanel('alert')} style={[s.headerBtn, s.alertBtn]} accessibilityLabel="快速通報">
           <Ionicons name="megaphone" size={21} color="#FFF" />
         </Squishy>
-        <Squishy onPress={() => setPanel('announcements')} style={s.headerBtn} accessibilityLabel="公告與行程">
+        <Squishy onPress={() => setPanel('calendar')} style={s.headerBtn} accessibilityLabel="行事曆">
           <Ionicons name="calendar" size={22} color={C.primary} />
           {pending.length > 0 ? (
             <View style={s.badge}>
@@ -490,34 +491,34 @@ export function BoardScreen({
         onLocate={locate}
       />
 
-      {/* 最重要的事：沒確認的公告 > 下一個行程 */}
-      {pending.length > 0 ? (
-        <Squishy
-          style={[s.banner, { backgroundColor: pending[0].priority === 'urgent' ? C.urgent : C.important }]}
-          onPress={() => setPanel('announcements')}>
-          <Text style={s.bannerIcon}>{pending[0].priority === 'urgent' ? '⚠️' : '📢'}</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={s.bannerTitle} numberOfLines={1}>
+      {/* header 第二行：等我確認的公告、下一個行程，壓成一行小膠囊；點了打開公告與行程 */}
+      <View style={[s.subHeader, compact && s.subHeaderCompact]}>
+        {pending.length > 0 ? (
+          <Squishy
+            style={[s.pill, { backgroundColor: pending[0].priority === 'urgent' ? C.urgent : C.important }]}
+            onPress={() => setPanel('announcements')}
+            accessibilityLabel={`${pending.length} 則公告等你確認`}>
+            <Text style={s.pillText} numberOfLines={1}>
+              {pending[0].priority === 'urgent' ? '⚠️' : '📢'} {pending.length > 1 ? `${pending.length} 則待確認・` : ''}
               {itemTitle(pending[0])}
             </Text>
-            <Text style={s.bannerSub} numberOfLines={1}>
-              {pending.length > 1 ? `還有 ${pending.length} 則公告等你確認` : '這則公告等你確認'}
-              {pending[0].dueAt ? `・${whenLabel(pending[0].dueAt, now)}` : ''}
+          </Squishy>
+        ) : null}
+        {nextEvent ? (
+          <Squishy style={[s.pill, { backgroundColor: C.lavender }]} onPress={() => locate(nextEvent)}>
+            <Text style={s.pillText} numberOfLines={1}>
+              📅 {whenLabel(nextEvent.dueAt, now)} {itemTitle(nextEvent)}・{countdownLabel(nextEvent.dueAt, now)}
             </Text>
-          </View>
-          <View style={s.bannerAction}>
-            <Text style={s.bannerActionText}>去看看</Text>
-          </View>
-        </Squishy>
-      ) : nextEvent ? (
-        <Squishy style={[s.banner, { backgroundColor: C.lavender }]} onPress={() => locate(nextEvent)}>
-          <Text style={s.bannerIcon}>📅</Text>
-          <Text style={[s.bannerTitle, { flex: 1 }]} numberOfLines={1}>
-            {whenLabel(nextEvent.dueAt, now)}　{itemTitle(nextEvent)}
-          </Text>
-          <Text style={s.bannerSub}>{countdownLabel(nextEvent.dueAt, now)}</Text>
-        </Squishy>
-      ) : null}
+          </Squishy>
+        ) : null}
+        {pending.length === 0 && !nextEvent ? (
+          <Squishy style={[s.pill, s.pillQuiet]} onPress={() => setPanel('announcements')}>
+            <Text style={[s.pillText, { color: C.sub }]} numberOfLines={1}>
+              ✓ 公告都看過了・沒有接下來的行程
+            </Text>
+          </Squishy>
+        ) : null}
+      </View>
 
       <Canvas
         ref={canvas}
@@ -654,6 +655,9 @@ export function BoardScreen({
           onLocate={locate}
           onClose={() => setPanel('none')}
         />
+      ) : null}
+      {panel === 'calendar' ? (
+        <CalendarSheet items={items} uid={uid} onAck={ack} onLocate={locate} onClose={() => setPanel('none')} />
       ) : null}
       {panel === 'invite' ? (
         <InviteSheet
@@ -816,24 +820,11 @@ const s = StyleSheet.create({
     borderColor: '#FFF',
   },
   badgeText: { color: '#FFF', fontSize: 11, fontFamily: F.display },
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginHorizontal: 12,
-    marginBottom: 8,
-    paddingLeft: 14,
-    paddingRight: 8,
-    paddingVertical: 8,
-    borderRadius: 22,
-    borderBottomWidth: 4,
-    borderBottomColor: '#00000022',
-  },
-  bannerIcon: { fontSize: 22 },
-  bannerTitle: { color: '#FFF', fontSize: 18, fontFamily: F.display },
-  bannerSub: { color: '#FFFFFFE6', fontSize: 13, fontFamily: F.display, marginTop: 1 },
-  bannerAction: { backgroundColor: '#FFF', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 },
-  bannerActionText: { fontFamily: F.display, fontSize: 14, color: C.ink },
+  subHeader: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, marginBottom: 6 },
+  subHeaderCompact: { paddingHorizontal: 12 },
+  pill: { flex: 1, height: 32, borderRadius: 16, paddingHorizontal: 12, justifyContent: 'center' },
+  pillQuiet: { backgroundColor: '#FFF', borderWidth: 2, borderColor: C.line },
+  pillText: { color: '#FFF', fontSize: 14, fontFamily: F.display },
   emptyHint: { position: 'absolute', left: 0, right: 0, top: '38%', alignItems: 'center', paddingHorizontal: 32 },
   emptyTitle: { fontSize: 24, fontFamily: F.display, color: C.sub },
   emptySub: { fontSize: 15, color: C.sub, textAlign: 'center', marginTop: 8, lineHeight: 22 },

@@ -2,7 +2,7 @@ const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 const DAY = 86_400_000;
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const startOfDay = (t: number) => {
+export const startOfDay = (t: number) => {
   const d = new Date(t);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
