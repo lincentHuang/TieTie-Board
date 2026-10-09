@@ -19,6 +19,7 @@ import { useBlockPullToClose } from '@/components/useBlockPullToClose';
 import { byQueueOrder, isItemDone, type BoardItem, type Geometry } from '@/lib/types';
 
 import { CanvasItem, type GroupDrag, type Hit } from './CanvasItem';
+import { swallowGhostClick } from './ghost-click';
 import { ModeBar } from './ModeBar';
 import { queueLayout } from './queue-layout';
 import { queuePages } from './queue-order';
@@ -698,10 +699,15 @@ function AddCard({
   sub: string;
   onPress: () => void;
 }) {
+  // 會打開編輯視窗：網頁上手指放開後補送的 click 不要打到剛打開的視窗
+  const press = () => {
+    swallowGhostClick();
+    onPress();
+  };
   const tap = Gesture.Tap()
     .maxDistance(10)
     .onEnd((_e, success) => {
-      if (success) scheduleOnRN(onPress);
+      if (success) scheduleOnRN(press);
     });
   return (
     <GestureDetector gesture={tap}>

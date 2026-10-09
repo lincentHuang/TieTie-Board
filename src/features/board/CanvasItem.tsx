@@ -23,6 +23,7 @@ import { C, Ionicons, themed } from '@/components/ui';
 import type { BoardItem, Geometry } from '@/lib/types';
 
 import { cardTaskRowH } from './Checklist';
+import { swallowGhostClick } from './ghost-click';
 import { ItemBody } from './ItemBody';
 import type { Move, Nervous } from './wander';
 
@@ -453,9 +454,14 @@ export function CanvasItem({
   const longPress = Gesture.LongPress()
     .minDuration(450)
     .onStart(() => scheduleOnRN(onLongPress, id));
+  // 點兩下打開檢視視窗：網頁上手指放開後瀏覽器補送的 click 會打在剛打開的視窗背景、把它關掉，先擋掉
+  const open = (itemId: string) => {
+    swallowGhostClick();
+    onOpen(itemId);
+  };
   // 點一下：正在跺腳的話先收起腳、站回原本的位置，下一次也不跺（安靜一陣子）
-  // 點兩下自己算時間，不用手勢套件的 numberOfTaps(2)：手機瀏覽器上那個常常認不出來，
-  // 而且點一下也不用先等半秒看看是不是點兩下，選取馬上有反應；多選時點兩下也只是加入 / 拿掉
+  // 點兩下自己算時間，不用手勢套件的 numberOfTaps(2)：點一下不用先等半秒看看是不是點兩下，
+  // 選取馬上有反應；多選時點兩下也只是加入 / 拿掉
   const tap = Gesture.Tap().onEnd((e, success) => {
     if (!success) return;
     if (fretting.get()) {
@@ -470,7 +476,7 @@ export function CanvasItem({
     const last = lastTap.get();
     if (!multi && now - last.at < DOUBLE_TAP_MS && Math.hypot(e.absoluteX - last.x, e.absoluteY - last.y) < DOUBLE_TAP_DIST) {
       lastTap.set({ at: 0, x: 0, y: 0 });
-      scheduleOnRN(onOpen, id);
+      scheduleOnRN(open, id);
       return;
     }
     lastTap.set({ at: now, x: e.absoluteX, y: e.absoluteY });
