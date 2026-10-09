@@ -368,7 +368,7 @@ function NoteText({
           setSel(e.nativeEvent.selection);
           setForced(undefined);
         }}
-        placeholder={listFirst ? '例：週末採買' : '例：週六 9:00 全家大掃除\n記得先把自己房間收好'}
+        placeholder={listFirst ? '例：週末採買' : '例：週六 9:00 大掃除'}
         placeholderTextColor="#B9B2CF"
         multiline
         autoFocus={autoFocus && !linking}

@@ -216,7 +216,7 @@ export function BoardScreen({
         type: 'note',
         text: '',
         color: announcement ? '#FFFFFF' : NOTE_COLORS[0],
-        fontSize: announcement ? 28 : 20,
+        fontSize: 20,
         priority: announcement ? 'important' : 'none',
         dueAt: announcement ? defaultDue(now) : null,
         endAt: null,
