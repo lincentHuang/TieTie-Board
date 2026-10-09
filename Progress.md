@@ -16,3 +16,4 @@
 - 2026-10-09：排隊模式自動精簡空間：便利貼高度量內容後縮成剛好裝下（字多的最多長到原本 1.5 倍、最矮 84），手機上卡片拉成畫面寬（字少換行），排與排、段與段、牌子的間距縮小；照片、只放檔案、貼圖維持原本大小，自由模式不受影響（src/features/board/Canvas.tsx、CanvasItem.tsx、ItemBody.tsx、queue-layout.ts）
 - 2026-10-09：排隊模式加入封存：完成的項目（狀態完成、或待辦全勾完）不再排隊，右上角分頁旁多一顆 📦（顯示幾則），點了改看已完成的（一樣分公告／記事、依日期），最下面是「回到隊伍」；把狀態改回來就自動回到隊伍；從通知列找封存的項目會自動切過去（src/features/board/Canvas.tsx、QueueTabs.tsx）
 - 2026-10-09：行事曆改成固定大小（佔滿畫面、四周留 16 的空隙，內容多寡不影響大小，列表在裡面捲動）；最下面固定一顆「在 X/X 新增公告」，點了直接開新增公告、日期帶那天（今天是下一個整點、其他天早上 9 點）。Sheet 加 `fill` 選項（src/components/Sheet.tsx、src/features/board/CalendarSheet.tsx、BoardScreen.tsx）
+- 2026-10-09：整併提交推上 main（f9d871f），EAS 建置 Android APK versionCode 8 並發布 GitHub Release android-v1.0.0-8
