@@ -25,9 +25,20 @@ export function whenLabel(t: number, now = Date.now()) {
   return `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAYS[d.getDay()]}）${hm}`;
 }
 
-/** 倒數文字：「還有 3 天」「還有 2 小時」「進行中」「已結束」 */
-export function countdownLabel(t: number, now = Date.now()) {
+/**
+ * 一段時間的文字：同一天「今天 14:00–16:00」，跨天「10/14（三）09:00 ～ 10/16（五）18:00」；
+ * 沒有結束就跟 whenLabel 一樣
+ */
+export function rangeLabel(start: number, end: number | null, now = Date.now()) {
+  if (end === null) return whenLabel(start, now);
+  if (startOfDay(start) === startOfDay(end)) return `${whenLabel(start, now)}–${timeOfDay(end)}`;
+  return `${whenLabel(start, now)} ～ ${whenLabel(end, now)}`;
+}
+
+/** 倒數文字：「還有 3 天」「還有 2 小時」「進行中」「已結束」；有結束時間的話，結束前都算進行中 */
+export function countdownLabel(t: number, now = Date.now(), end: number | null = null) {
   const diff = t - now;
+  if (end !== null && diff <= 0) return now <= end ? '進行中' : '已結束';
   if (diff < -3_600_000) return '已結束';
   if (diff <= 0) return '進行中';
   const min = Math.ceil(diff / 60_000);

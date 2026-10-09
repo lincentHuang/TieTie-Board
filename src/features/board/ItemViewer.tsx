@@ -7,7 +7,7 @@ import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Ionicons, Label } from '@/components/ui';
 import { FileRow } from '@/features/files/FileRow';
-import { countdownLabel, timeAgo, whenLabel } from '@/lib/dates';
+import { countdownLabel, rangeLabel, timeAgo } from '@/lib/dates';
 import {
   PRIORITY_META,
   STATUS_META,
@@ -101,8 +101,8 @@ export function ItemViewer({
       {item.dueAt ? (
         <View style={[s.when, { backgroundColor: (announce ? meta.color : C.mint) + '1F' }]}>
           <Ionicons name="calendar" size={18} color={announce ? meta.color : C.mint} />
-          <Text style={s.whenText}>{whenLabel(item.dueAt, now)}</Text>
-          <Text style={s.whenSub}>{countdownLabel(item.dueAt, now)}</Text>
+          <Text style={s.whenText}>{rangeLabel(item.dueAt, item.endAt, now)}</Text>
+          <Text style={s.whenSub}>{countdownLabel(item.dueAt, now, item.endAt)}</Text>
         </View>
       ) : null}
 

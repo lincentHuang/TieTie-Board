@@ -296,6 +296,7 @@ function toItem(id: string, d: Record<string, unknown>): BoardItem {
     checked: toChecked(d.checked),
     priority: oneOf(PRIORITIES, d.priority, 'none'),
     dueAt: millis(d.dueAt),
+    endAt: millis(d.endAt),
     status: oneOf(STATUSES, d.status, 'none'),
     tags: strList(d.tags),
     authorId: str(d.authorId, ''),
@@ -313,9 +314,10 @@ export const watchItems = (gid: string, cb: (items: BoardItem[]) => void) =>
 export type NewItem = Omit<BoardItem, 'id' | 'createdAt' | 'ackBy' | 'editors' | 'checked'>;
 
 const toFirestore = (patch: Partial<BoardItem>) => {
-  const { dueAt, ...rest } = patch;
+  const { dueAt, endAt, ...rest } = patch;
   const data: DocumentData = { ...rest };
   if (dueAt !== undefined) data.dueAt = dueAt === null ? null : Timestamp.fromMillis(dueAt);
+  if (endAt !== undefined) data.endAt = endAt === null ? null : Timestamp.fromMillis(endAt);
   delete data.id;
   delete data.createdAt;
   delete data.ackBy;

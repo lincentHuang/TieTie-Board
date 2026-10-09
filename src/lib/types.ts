@@ -39,8 +39,10 @@ export interface BoardItem {
   checked: Record<string, string>;
 
   priority: Priority;
-  /** 活動日期時間（毫秒），沒有則為 null */
+  /** 活動日期時間（毫秒），沒有則為 null；有結束時間的話這是開始 */
   dueAt: number | null;
+  /** 結束時間（毫秒）：一段時間的活動才有，一定在 dueAt 之後；沒有則為 null */
+  endAt: number | null;
   status: ItemStatus;
   /** 標籤（不含 #），大家都可以改 */
   tags: string[];

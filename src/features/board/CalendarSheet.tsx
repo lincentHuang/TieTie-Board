@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
 import { Button, C, F, Ionicons, Label } from '@/components/ui';
-import { startOfDay, timeOfDay } from '@/lib/dates';
+import { rangeLabel, startOfDay, timeOfDay } from '@/lib/dates';
 import { PRIORITY_META, isAckedBy, isAnnouncement, itemTitle, type BoardItem } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
 
@@ -110,7 +110,13 @@ export function CalendarSheet({
           <Pressable key={i.id} onPress={() => onLocate(i)} style={[s.card, { borderColor: color + '55' }]}>
             <View style={s.cardHead}>
               <Text style={[s.time, { color }]}>
-                {i.dueAt !== null ? `📅 ${timeOfDay(i.dueAt)}` : `📢 ${i.createdAt ? timeOfDay(i.createdAt) : ''} 發布`}
+                {i.dueAt === null
+                  ? `📢 ${i.createdAt ? timeOfDay(i.createdAt) : ''} 發布`
+                  : i.endAt === null
+                    ? `📅 ${timeOfDay(i.dueAt)}`
+                    : startOfDay(i.dueAt) === startOfDay(i.endAt)
+                      ? `📅 ${timeOfDay(i.dueAt)}–${timeOfDay(i.endAt)}`
+                      : `📅 ${rangeLabel(i.dueAt, i.endAt)}`}
               </Text>
               <Text style={s.author} numberOfLines={1}>
                 {i.authorName}

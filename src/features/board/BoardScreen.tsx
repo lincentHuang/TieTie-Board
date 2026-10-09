@@ -219,6 +219,7 @@ export function BoardScreen({
         fontSize: announcement ? 28 : 20,
         priority: announcement ? 'important' : 'none',
         dueAt: announcement ? defaultDue(now) : null,
+        endAt: null,
         photos: [],
         carousel: false,
         files: [],
@@ -240,6 +241,7 @@ export function BoardScreen({
         fontSize: 20,
         priority: 'none',
         dueAt: null,
+        endAt: null,
         photos: [],
         carousel: false,
         files: [],
@@ -265,6 +267,7 @@ export function BoardScreen({
           fontSize: 16,
           priority: 'none',
           dueAt: null,
+          endAt: null,
           imageData: img.dataUrl,
           photos: [],
           carousel: false,
@@ -290,6 +293,7 @@ export function BoardScreen({
         fontSize: 20,
         priority: 'none',
         dueAt: null,
+        endAt: null,
         photos: [],
         carousel: false,
         files: [],
@@ -341,10 +345,10 @@ export function BoardScreen({
       askEdit(item);
       return;
     }
-    const { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, tasks, status, tags } = item;
+    const { type, text, color, fontSize, priority, dueAt, endAt, imageData, photos, carousel, files, tasks, status, tags } = item;
     setEditing({
       id,
-      draft: { type, text, color, fontSize, priority, dueAt, imageData, photos, carousel, files, tasks, status, tags },
+      draft: { type, text, color, fontSize, priority, dueAt, endAt, imageData, photos, carousel, files, tasks, status, tags },
     });
   };
 
@@ -359,6 +363,7 @@ export function BoardScreen({
         !samePhotoSet(draft.photos, old.photos) ||
         !sameFileSet(draft.files, old.files) ||
         draft.dueAt !== old.dueAt ||
+        draft.endAt !== old.endAt ||
         draft.priority !== old.priority;
       // 第一次加照片 / 檔案、多寫幾項待辦就把卡片拉長；拿掉就縮回來
       const current = items.find((i) => i.id === target.id);

@@ -21,13 +21,28 @@ export function monthGrid(year: number, month: number): (DayKey | null)[] {
   return cells;
 }
 
+/** 跨好幾天的活動最多畫幾天（打錯年份時不要塞滿整個月曆） */
+const MAX_SPAN_DAYS = 62;
+
+/** 項目佔哪幾天：有結束時間的從開始那天到結束那天，每天都算 */
+function daysOf(item: BoardItem): DayKey[] {
+  const first = dayOf(item);
+  if (first === null) return [];
+  if (item.endAt === null) return [first];
+  const days: DayKey[] = [];
+  const last = startOfDay(item.endAt);
+  // 用日期加一天而不是加 24 小時：遇到日光節約時間也不會跳號
+  for (const d = new Date(first); d.getTime() <= last && days.length < MAX_SPAN_DAYS; d.setDate(d.getDate() + 1)) {
+    days.push(d.getTime());
+  }
+  return days;
+}
+
 /** 每一天有哪些項目（依時間排：有時間的照時間，沒時間的照發布時間） */
 export function itemsByDay(items: BoardItem[]) {
   const map = new Map<DayKey, BoardItem[]>();
   for (const i of items) {
-    const day = dayOf(i);
-    if (day === null) continue;
-    map.set(day, [...(map.get(day) ?? []), i]);
+    for (const day of daysOf(i)) map.set(day, [...(map.get(day) ?? []), i]);
   }
   const at = (i: BoardItem) => i.dueAt ?? i.createdAt ?? 0;
   for (const list of map.values()) list.sort((a, b) => at(a) - at(b));

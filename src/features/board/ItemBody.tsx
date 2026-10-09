@@ -6,7 +6,7 @@ import Animated, { useAnimatedStyle, useReducedMotion, type SharedValue } from '
 import { RichText } from '@/components/RichText';
 import { C, F, Ionicons } from '@/components/ui';
 import { fileKind } from '@/features/files/file-kinds';
-import { countdownLabel, whenLabel } from '@/lib/dates';
+import { countdownLabel, rangeLabel } from '@/lib/dates';
 import { plainText } from '@/lib/rich-text';
 import {
   PRIORITY_META,
@@ -77,11 +77,11 @@ export function ItemBody({
       <View style={[s.header, { backgroundColor: announce ? meta.color : C.mint }]}>
         <Text style={s.headerText} numberOfLines={1}>
           {announce ? `${item.priority === 'urgent' ? '⚠️' : '📢'} ${meta.label}公告` : '📅 活動'}
-          {item.dueAt ? `・${whenLabel(item.dueAt, now)}` : ''}
+          {item.dueAt ? `・${rangeLabel(item.dueAt, item.endAt, now)}` : ''}
         </Text>
         {item.dueAt ? (
           <Text style={[s.headerText, s.countdown]} numberOfLines={1}>
-            {countdownLabel(item.dueAt, now)}
+            {countdownLabel(item.dueAt, now, item.endAt)}
           </Text>
         ) : null}
       </View>

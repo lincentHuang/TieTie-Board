@@ -22,23 +22,26 @@ function dayLabel(day: number, today: number) {
 
 /**
  * 滑動模式的順序：依日期先排，同一天一段。
- * 今天以後有日期的照日期先後（一天一段）→ 沒日期的（照排隊順序：緊急、重要、越新越前面）→ 已經過去的日期（最近的在前）。
+ * 今天以後有日期的照日期先後（一天一段；開始了還沒結束的算今天）→ 沒日期的（照排隊順序：緊急、重要、越新越前面）→ 已經過去的日期（最近的在前）。
  * 貼圖不算
  */
 export function feedSections(items: BoardItem[], now: number): FeedSection[] {
   const today = startOfDay(now);
   const cards = items.filter((i) => i.type !== 'sticker');
+  // 有結束時間的看結束：還沒結束（進行中）的排在今天
+  const lastDay = (i: BoardItem) => i.endAt ?? i.dueAt ?? 0;
+  const shownDay = (i: BoardItem & { dueAt: number }) => Math.max(startOfDay(i.dueAt), today);
   const upcoming = cards
-    .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null && i.dueAt >= today)
-    .sort((a, b) => a.dueAt - b.dueAt || a.id.localeCompare(b.id));
+    .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null && lastDay(i) >= today)
+    .sort((a, b) => shownDay(a) - shownDay(b) || a.dueAt - b.dueAt || a.id.localeCompare(b.id));
   const undated = cards.filter((i) => i.dueAt === null).sort(byQueueOrder(now));
   const past = cards
-    .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null && i.dueAt < today)
+    .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null && lastDay(i) < today)
     .sort((a, b) => b.dueAt - a.dueAt || a.id.localeCompare(b.id));
 
   const sections: FeedSection[] = [];
   for (const item of upcoming) {
-    const day = startOfDay(item.dueAt);
+    const day = shownDay(item);
     const last = sections.at(-1);
     if (last?.key === `d${day}`) last.items.push(item);
     else sections.push({ key: `d${day}`, label: dayLabel(day, today), items: [item] });

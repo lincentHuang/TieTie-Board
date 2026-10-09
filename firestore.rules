@@ -41,6 +41,12 @@ service cloud.firestore {
         && (!('checked' in d) || (d.checked is map && d.checked.size() <= 60));
     }
 
+    // 結束時間可以沒有（舊資料、只有一個時間點），有的話要有開始、而且在開始之後
+    function validWhen(d) {
+      return !('endAt' in d) || d.endAt == null
+        || (d.endAt is timestamp && 'dueAt' in d && d.dueAt is timestamp && d.endAt > d.dueAt);
+    }
+
     // 作者同意可以改內容的人：可以沒有（舊資料、沒人申請過），有的話是名單
     function validEditors(d) {
       return !('editors' in d) || (d.editors is list && d.editors.size() <= 50);
@@ -50,14 +56,15 @@ service cloud.firestore {
     // 不能改作者、類型、建立時間、誰能改（editors 只有作者能加）；ackBy 只能清空（改了公告，大家要重新確認）
     function validContentEdit() {
       return onlyChanges(['x', 'y', 'w', 'h', 'z', 'text', 'color', 'fontSize', 'imageData', 'photos', 'carousel',
-          'files', 'tasks', 'checked', 'priority', 'dueAt', 'status', 'tags', 'ackBy'])
+          'files', 'tasks', 'checked', 'priority', 'dueAt', 'endAt', 'status', 'tags', 'ackBy'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['ackBy'])
           || request.resource.data.ackBy == {})
         && request.resource.data.priority in ['none', 'important', 'urgent']
         && validOrganize(request.resource.data)
         && validPhotos(request.resource.data)
         && validFiles(request.resource.data)
-        && validTasks(request.resource.data);
+        && validTasks(request.resource.data)
+        && validWhen(request.resource.data);
     }
 
     // 頭像可以沒有（匿名成員、舊資料），有的話只能是 LINE / Google 的大頭貼網址（會顯示在每個人的畫面上）
@@ -212,7 +219,8 @@ service cloud.firestore {
           && validOrganize(request.resource.data)
           && validPhotos(request.resource.data)
           && validFiles(request.resource.data)
-          && validTasks(request.resource.data);
+          && validTasks(request.resource.data)
+          && validWhen(request.resource.data);
 
         // 作者：可以改內容、刪除，也可以同意別人來改（加進 editors）
         allow update: if signedIn() && resource.data.authorId == request.auth.uid
@@ -220,6 +228,7 @@ service cloud.firestore {
           && validPhotos(request.resource.data)
           && validFiles(request.resource.data)
           && validTasks(request.resource.data)
+          && validWhen(request.resource.data)
           && validEditors(request.resource.data);
 
         // 房主：可以改所有人的內容；作者同意過的人（editors）：可以改那一張的內容

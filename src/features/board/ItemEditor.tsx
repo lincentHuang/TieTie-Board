@@ -8,13 +8,13 @@ import { RichText } from '@/components/RichText';
 import { Button, C, F, Ionicons, Label, Segmented, type IconName } from '@/components/ui';
 import { FilePicker } from '@/features/files/FilePicker';
 import type { PendingFiles } from '@/features/files/transfer';
-import { countdownLabel, whenLabel } from '@/lib/dates';
+import { countdownLabel, rangeLabel } from '@/lib/dates';
 import type { PickedFile } from '@/lib/documents';
 import { hasFormatting, insertLink, safeUrl, toggleHeading, wrapSelection, type Selection } from '@/lib/rich-text';
 import { MAX_FILES, MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
 import { ChecklistEditor } from './ChecklistEditor';
-import { applyWhen, parseWhen } from './parse-when';
+import { applyEnd, applyWhen, parseWhen } from './parse-when';
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
 import { PhotoPicker } from './PhotoPicker';
@@ -29,6 +29,7 @@ export type Draft = Pick<
   | 'fontSize'
   | 'priority'
   | 'dueAt'
+  | 'endAt'
   | 'imageData'
   | 'photos'
   | 'carousel'
@@ -44,6 +45,9 @@ const FONT_SIZES = [
   { value: '28', label: '大' },
   { value: '40', label: '特大' },
 ];
+
+/** 新開結束時間時，預設活動一小時 */
+const HOUR = 3_600_000;
 
 /** 現在幾點（只在打字時叫） */
 const clock = () => Date.now();
@@ -86,26 +90,42 @@ export function ItemEditor({
   const listFirst = isNew && initial.tasks.length > 0;
   /** 公告：日期放在內容下面第二行，一打開就看得到、改得到（照打開時決定，改重要程度時不會跳位置） */
   const dateFirst = initial.priority !== 'none' && initial.type !== 'image';
-  /** 新增時：內容裡寫了日期時間就自動帶到日期欄；自己動過日期欄之後就不再改 */
-  const [autoDate, setAutoDate] = useState(isNew);
+  /** 內容裡寫了日期時間就自動帶到日期欄（新增、編輯都會）；這次自己動過日期欄之後就不再改 */
+  const [autoDate, setAutoDate] = useState(true);
   const [autoFound, setAutoFound] = useState(false);
   const changeText = (text: string) => {
-    const found = autoDate ? parseWhen(text, clock()) : null;
-    // 每次都從打開時的日期重新套；內容裡的日期時間刪掉了，日期欄也回到打開時的樣子
-    if (found) set({ text, dueAt: applyWhen(found, initial.dueAt, defaultDue()) });
-    else set(autoFound ? { text, dueAt: initial.dueAt } : { text });
-    if (autoDate) setAutoFound(found !== null);
+    if (!autoDate) return set({ text });
+    const now = clock();
+    const found = parseWhen(text, now);
+    // 編輯時：內容裡的日期時間跟打開時一樣（只是改錯字、加幾句話），就不要蓋掉原本設好的日期
+    const changed = JSON.stringify(found) !== JSON.stringify(parseWhen(initial.text, now));
+    // 每次都從打開時的日期重新套；內容裡的日期時間刪掉或改回原樣，日期欄也回到打開時的樣子
+    if (found && changed) {
+      const dueAt = applyWhen(found, initial.dueAt, defaultDue());
+      // 有寫結束就用寫的；沒寫的話，原本的結束還在開始之後就留著
+      const kept = initial.endAt !== null && initial.endAt > dueAt ? initial.endAt : null;
+      set({ text, dueAt, endAt: found.end ? applyEnd(found, dueAt) : kept });
+    } else set(autoFound ? { text, dueAt: initial.dueAt, endAt: initial.endAt } : { text });
+    setAutoFound(found !== null && changed);
   };
-  const changeDue = (dueAt: number | null) => {
+  /** 自己改日期欄：之後就不再自動帶入 */
+  const manual = (patch: Partial<Draft>) => {
     setAutoDate(false);
     setAutoFound(false);
-    set({ dueAt });
+    set(patch);
   };
+  /** 改開始時間：有結束的話一起挪，活動長度不變；關掉日期就連結束一起清掉 */
+  const changeDue = (dueAt: number | null) => {
+    const { dueAt: was, endAt } = draft;
+    manual({ dueAt, endAt: dueAt === null || endAt === null || was === null ? null : dueAt + (endAt - was) });
+  };
+  const endTooEarly = draft.dueAt !== null && draft.endAt !== null && draft.endAt <= draft.dueAt;
 
   const save = async () => {
     const tasks = cleanTasks(draft.tasks);
     // 便利貼至少要有文字、待辦、照片或檔案
     if (!isImage && !draft.text.trim() && !tasks.length && !draft.photos.length && !draft.files.length) return;
+    if (endTooEarly) return showError('時間怪怪的', new Error('結束時間要在開始之後'));
     const uploads = draft.files.flatMap((file) => (pending[file.id] ? [{ file, bytes: pending[file.id] }] : []));
     setBusy(true);
     if (uploads.length) setProgress(0);
@@ -136,15 +156,24 @@ export function ItemEditor({
   const dateField = (
     <>
       <View style={s.row}>
-        <Label style={s.rowLabel}>日期時間（活動、截止日）</Label>
+        <Label style={s.rowLabel}>{draft.endAt !== null ? '開始' : '日期時間（活動、截止日）'}</Label>
         <Switch value={draft.dueAt !== null} onValueChange={(on) => changeDue(on ? defaultDue() : null)} />
       </View>
       {draft.dueAt !== null ? (
         <>
           <DateTimeField value={draft.dueAt} onChange={changeDue} />
-          <Text style={s.hint}>
-            {autoFound ? '✨ 從內容自動帶入：' : ''}
-          {whenLabel(draft.dueAt)}・{countdownLabel(draft.dueAt)}。小工具會倒數，並在前一天、前一小時、準時提醒。
+          <View style={s.row}>
+            <Label style={s.rowLabel}>結束（選填，一段時間的活動）</Label>
+            <Switch
+              value={draft.endAt !== null}
+              onValueChange={(on) => manual({ endAt: on && draft.dueAt !== null ? draft.dueAt + HOUR : null })}
+            />
+          </View>
+          {draft.endAt !== null ? <DateTimeField value={draft.endAt} onChange={(endAt) => manual({ endAt })} /> : null}
+          <Text style={[s.hint, endTooEarly && { color: C.urgent }]}>
+            {endTooEarly
+              ? '結束時間要在開始之後。'
+              : `${autoFound ? '✨ 從內容自動帶入：' : ''}${rangeLabel(draft.dueAt, draft.endAt)}・${countdownLabel(draft.dueAt, undefined, draft.endAt)}。小工具會倒數，並在前一天、前一小時、準時提醒。`}
           </Text>
         </>
       ) : null}

@@ -7,3 +7,4 @@
 - 2026-10-08：修正手機瀏覽器快速點兩下卡片打不開檢視視窗：不再用手勢套件的 numberOfTaps(2)，改在單擊手勢裡自己算（400ms 內、40px 內算點兩下）；點一下選取也不用再等半秒（src/features/board/CanvasItem.tsx）
 - 2026-10-08：修好編輯別人便利貼時「沒有權限」：GitHub Action 缺 FIREBASE_SERVICE_ACCOUNT，新規則沒上傳，改從本機手動部署 firestore.rules
 - 2026-10-09：新增「滑動」看板模式並設為預設：像網頁一樣卡片同寬排成一欄上下捲，依日期分段（今天／明天／某天→沒有日期→已經過了），最下面有「新增公告」；模式按鈕改成滑動／自由／排隊三顆。新公告日期欄移到內容下面第二行、預設今天；內容裡寫的日期時間（明天、下週三、10/12、晚上七點半…）會自動帶入日期欄（src/features/board/SwipeBoard.tsx、swipe-order.ts、ModeBar.tsx、parse-when.ts、ItemEditor.tsx、BoardScreen.tsx、useViewPrefs.ts）
+- 2026-10-09：便利貼可以有開始與結束時間（新增 endAt 欄位；編輯器「開始」下面多一個「結束（選填）」、改開始時結束一起挪；卡片、檢視顯示「10/14（三）09:00 ～ 10/16（五）18:00」或「今天 14:00–16:00」，結束前都算進行中；月曆上跨天的每天都列；滑動模式進行中的排在今天）。自動認日期改成編輯時也會套用（內容裡的日期沒變就不動原本設好的），並認得範圍「10/14~10/16」「下午2點到4點」「週三至週五」「晚上10點到1點」（src/lib/types.ts、repo.ts、dates.ts、firestore.rules、src/features/board/parse-when.ts、ItemEditor.tsx、ItemBody.tsx、ItemViewer.tsx、calendar.ts、CalendarSheet.tsx、swipe-order.ts）
