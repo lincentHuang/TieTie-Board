@@ -61,11 +61,12 @@ import { CalendarSheet } from './CalendarSheet';
 import { Canvas, type CanvasHandle } from './Canvas';
 import { EditRequestBanner } from './EditRequestBanner';
 import { InviteSheet } from './InviteSheet';
-import { ItemEditor, type Draft } from './ItemEditor';
+import { defaultDue, ItemEditor, type Draft } from './ItemEditor';
 import { ItemViewer } from './ItemViewer';
 import { OrganizeManySheet, OrganizeSheet } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
+import { SwipeBoard } from './SwipeBoard';
 import { TodoPill } from './TodoPill';
 import { TodoSheet } from './TodoSheet';
 import { newTask, openTodos, sameTasks, type TodoEntry } from './todos';
@@ -124,7 +125,7 @@ export function BoardScreen({
   /** 點兩下打開的檢視模式 */
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [filesId, setFilesId] = useState<string | null>(null);
-  const { prefs, setQueued, setGroup } = useViewPrefs();
+  const { prefs, setMode, setGroup } = useViewPrefs();
 
   if (!items || !prefs) {
     return (
@@ -135,7 +136,9 @@ export function BoardScreen({
     );
   }
 
-  const { queued } = prefs;
+  const { mode } = prefs;
+  const queued = mode === 'queue';
+  const free = mode === 'free';
   // 被別人刪掉的項目自動不算在選取裡
   const selection = items.filter((i) => sel.ids.includes(i.id));
   const multi = sel.multi && selection.length > 0;
@@ -180,15 +183,18 @@ export function BoardScreen({
   /** 公告 / 活動有變化時，讓其他人的桌面小工具跟著更新（新公告會跳通知） */
   const pushCtx = { gid, uid, boardName: groupName, authorName: session.nickname ?? '' };
 
-  /** 新項目放在目前畫面正中間，疊在最上層 */
+  /** 新項目放在目前畫面正中間，疊在最上層；滑動模式看不到白板，就放在所有東西的右邊 */
   const placeNew = (w: number, h: number) => {
-    const c = canvas.current?.viewCenter() ?? { x: 0, y: 0 };
-    return { x: c.x - w / 2, y: c.y - h / 2, w, h, z: maxZ + 1 };
+    const c = canvas.current?.viewCenter();
+    if (c && Number.isFinite(c.x)) return { x: c.x - w / 2, y: c.y - h / 2, w, h, z: maxZ + 1 };
+    const right = items.length ? Math.max(...items.map((i) => i.x + i.w)) + 40 : -w / 2;
+    const top = items.length ? Math.min(...items.map((i) => i.y)) : -h / 2;
+    return { x: right, y: top, w, h, z: maxZ + 1 };
   };
 
-  /** 排隊時新項目會直接站進隊伍裡，鏡頭跟過去看它排在哪 */
+  /** 排隊、滑動時新項目會直接排進去，鏡頭跟過去看它在哪 */
   const showNew = (id: string) => {
-    if (queued) canvas.current?.focus(id);
+    if (!free) canvas.current?.focus(id);
   };
 
   const create = async (draft: Draft, size: { w: number; h: number }) => {
@@ -212,7 +218,7 @@ export function BoardScreen({
         color: announcement ? '#FFFFFF' : NOTE_COLORS[0],
         fontSize: announcement ? 28 : 20,
         priority: announcement ? 'important' : 'none',
-        dueAt: null,
+        dueAt: announcement ? defaultDue(now) : null,
         photos: [],
         carousel: false,
         files: [],
@@ -458,7 +464,7 @@ export function BoardScreen({
           onPress: () => ackMany(unacked(selection)),
         },
         { icon: 'pricetags', label: '整理', color: C.mint, onPress: () => setOrganizingIds(selection.map((i) => i.id)) },
-        !queued && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront(selection) },
+        free && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront(selection) },
         selection.some(canDelete) && { icon: 'trash', label: '刪除', color: C.urgent, onPress: () => removeMany(selection) },
         done,
       ])
@@ -474,7 +480,7 @@ export function BoardScreen({
           !canEdit(selected) &&
             selected.files.length > 0 && { icon: 'attach', label: '檔案', color: C.lavender, onPress: () => setFilesId(selected.id) },
           { icon: 'pricetags', label: '整理', color: C.mint, onPress: () => setOrganizingIds([selected.id]) },
-          !queued && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront([selected]) },
+          free && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront([selected]) },
           canDelete(selected) && { icon: 'trash', label: '刪除', color: C.urgent, onPress: () => remove(selected) },
           done,
         ])
@@ -576,29 +582,46 @@ export function BoardScreen({
         ) : null}
       </View>
 
-      <Canvas
-        ref={canvas}
-        items={items}
-        now={now}
-        queued={queued}
-        onChangeMode={setQueued}
-        group={prefs.group}
-        onChangeGroup={setGroup}
-        selectedIds={selection.map((i) => i.id)}
-        multi={multi}
-        isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
-        readCount={readCount}
-        memberCount={members.length}
-        onTap={sel.tap}
-        onLongPress={sel.longPress}
-        onClear={sel.clear}
-        onHide={sel.drop}
-        onOpen={inspect}
-        onCommit={commit}
-        onCommitGroup={commitGroup}
-      />
+      {mode === 'swipe' ? (
+        <SwipeBoard
+          ref={canvas}
+          items={items}
+          now={now}
+          onChangeMode={setMode}
+          selectedIds={selection.map((i) => i.id)}
+          isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
+          readCount={readCount}
+          memberCount={members.length}
+          onTap={sel.tap}
+          onLongPress={sel.longPress}
+          onOpen={inspect}
+          onAdd={() => startNote(true)}
+        />
+      ) : (
+        <Canvas
+          ref={canvas}
+          items={items}
+          now={now}
+          queued={queued}
+          onChangeMode={setMode}
+          group={prefs.group}
+          onChangeGroup={setGroup}
+          selectedIds={selection.map((i) => i.id)}
+          multi={multi}
+          isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
+          readCount={readCount}
+          memberCount={members.length}
+          onTap={sel.tap}
+          onLongPress={sel.longPress}
+          onClear={sel.clear}
+          onHide={sel.drop}
+          onOpen={inspect}
+          onCommit={commit}
+          onCommitGroup={commitGroup}
+        />
+      )}
 
-      {items.length === 0 ? (
+      {items.length === 0 && mode !== 'swipe' ? (
         <View pointerEvents="none" style={s.emptyHint}>
           <Text style={s.emptyTitle}>白板空空的～</Text>
           <Text style={s.emptySub}>
@@ -614,7 +637,7 @@ export function BoardScreen({
         {multi ? (
           <View style={s.multiBar}>
             <Text style={s.multiText}>
-              已選 {selection.length} 個{queued ? '' : '・拖曳任一個一起移動'}
+              已選 {selection.length} 個{free ? '・拖曳任一個一起移動' : ''}
             </Text>
             {selection.length < items.length ? (
               <Pressable

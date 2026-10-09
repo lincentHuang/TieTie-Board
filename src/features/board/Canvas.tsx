@@ -12,14 +12,16 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { C, F, Ionicons, type IconName } from '@/components/ui';
+import { C, F, Ionicons } from '@/components/ui';
 import { useBlockPullToClose } from '@/components/useBlockPullToClose';
 import { byQueueOrder, type BoardItem, type Geometry } from '@/lib/types';
 
 import { CanvasItem, type GroupDrag, type Hit } from './CanvasItem';
+import { ModeBar } from './ModeBar';
 import { QueueBar } from './QueueBar';
 import { filterChips, groupQueue, matchesFilter, type Filter, type QueueGroup } from './queue-filter';
 import { queueLayout } from './queue-layout';
+import type { ViewMode } from './useViewPrefs';
 import { nervousness, shoveAside, strollStep, type Move, type Point } from './wander';
 
 const MIN_SCALE = 0.15;
@@ -61,7 +63,7 @@ interface Props {
   now: number;
   /** true = 排隊模式（只影響自己的畫面），false = 自由擺放（位置大家同步） */
   queued: boolean;
-  onChangeMode: (queued: boolean) => void;
+  onChangeMode: (mode: ViewMode) => void;
   /** 排隊時怎麼分隊 */
   group: QueueGroup;
   onChangeGroup: (group: QueueGroup) => void;
@@ -535,10 +537,7 @@ export function Canvas({
         />
       ) : null}
 
-      <View style={s.modeBar} accessibilityRole="radiogroup">
-        <ModeButton icon="hand-left" label="自由" hint="自由擺放：大家看到一樣的排版" active={!queued} onPress={() => onChangeMode(false)} />
-        <ModeButton icon="walk" label="排隊" hint="排隊：全部自動排整齊，只有你的畫面會變" active={queued} onPress={() => onChangeMode(true)} />
-      </View>
+      <ModeBar mode={queued ? 'queue' : 'free'} compact={size.w < 440} onChange={onChangeMode} />
 
       <View style={s.zoomBar}>
         <ZoomButton icon="remove" onPress={() => zoomAround(size.w / 2, size.h / 2, scale.get() / 1.25)} />
@@ -554,32 +553,6 @@ export function Canvas({
 
 /** 項目在白板上的位置與大小（只取這四個欄位） */
 const geometryOf = (item: BoardItem): Geometry => ({ x: item.x, y: item.y, w: item.w, h: item.h });
-
-function ModeButton({
-  icon,
-  label,
-  hint,
-  active,
-  onPress,
-}: {
-  icon: IconName;
-  label: string;
-  hint: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityLabel={hint}
-      accessibilityState={{ selected: active }}
-      style={({ pressed }) => [s.modeBtn, active && s.modeBtnOn, pressed && { opacity: 0.6 }]}>
-      <Ionicons name={icon} size={16} color={active ? '#FFF' : C.sub} />
-      <Text style={[s.modeText, active && { color: '#FFF' }]}>{label}</Text>
-    </Pressable>
-  );
-}
 
 function ZoomButton({ icon, onPress }: { icon: 'add' | 'remove' | 'scan-outline'; onPress: () => void }) {
   return (
@@ -651,26 +624,6 @@ const s = StyleSheet.create({
   noMatchTitle: { fontSize: 20, fontFamily: F.display, color: C.sub },
   noMatchBtn: { backgroundColor: C.primary, borderRadius: 18, paddingHorizontal: 18, height: 38, justifyContent: 'center' },
   noMatchBtnText: { fontSize: 15, fontFamily: F.display, color: '#FFF' },
-  modeBar: {
-    position: 'absolute',
-    left: 12,
-    top: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFFEE',
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: C.line,
-    padding: 3,
-    gap: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  modeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 11, borderRadius: 14 },
-  modeBtnOn: { backgroundColor: C.primary },
-  modeText: { fontSize: 13, fontFamily: F.display, color: C.sub },
   zoomBar: {
     position: 'absolute',
     right: 12,

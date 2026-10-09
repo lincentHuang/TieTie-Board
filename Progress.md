@@ -5,3 +5,5 @@
 - 2026-10-08：白板碰撞改成看速度：拖得快（每秒 700px 以上）才把別張撞開；慢慢拖就踮起腳、腳伸長、冒汗小心跨過去，被跨的那張縮一下讓路，跨到一半加速也不會撞飛（src/features/board/CanvasItem.tsx、Canvas.tsx）
 - 2026-10-08：便利貼可以加入待辦清單（工具列新增「待辦」、編輯器一格一項按 Enter 接下一項）；白板卡片顯示清單與進度、全部勾完蓋「完成」章；點兩下打開可打勾、顯示誰勾的；header 第二行（通知列）加待辦小膠囊，圈圈直接打勾，點開是全部待辦的面板（含狀態是待辦的便利貼）；Firestore 規則讓成員可以打勾、不能改清單內容（src/features/board/todos.ts、Checklist.tsx、ChecklistEditor.tsx、TodoPill.tsx、TodoSheet.tsx、src/lib/repo.ts、firestore.rules）
 - 2026-10-08：修正手機瀏覽器快速點兩下卡片打不開檢視視窗：不再用手勢套件的 numberOfTaps(2)，改在單擊手勢裡自己算（400ms 內、40px 內算點兩下）；點一下選取也不用再等半秒（src/features/board/CanvasItem.tsx）
+- 2026-10-08：修好編輯別人便利貼時「沒有權限」：GitHub Action 缺 FIREBASE_SERVICE_ACCOUNT，新規則沒上傳，改從本機手動部署 firestore.rules
+- 2026-10-09：新增「滑動」看板模式並設為預設：像網頁一樣卡片同寬排成一欄上下捲，依日期分段（今天／明天／某天→沒有日期→已經過了），最下面有「新增公告」；模式按鈕改成滑動／自由／排隊三顆。新公告日期欄移到內容下面第二行、預設今天；內容裡寫的日期時間（明天、下週三、10/12、晚上七點半…）會自動帶入日期欄（src/features/board/SwipeBoard.tsx、swipe-order.ts、ModeBar.tsx、parse-when.ts、ItemEditor.tsx、BoardScreen.tsx、useViewPrefs.ts）

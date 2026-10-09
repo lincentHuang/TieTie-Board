@@ -14,6 +14,7 @@ import { hasFormatting, insertLink, safeUrl, toggleHeading, wrapSelection, type 
 import { MAX_FILES, MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
 
 import { ChecklistEditor } from './ChecklistEditor';
+import { applyWhen, parseWhen } from './parse-when';
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
 import { PhotoPicker } from './PhotoPicker';
@@ -44,11 +45,13 @@ const FONT_SIZES = [
   { value: '40', label: '特大' },
 ];
 
-/** 預設活動時間：明天早上 9 點 */
-const defaultDue = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
+/** 現在幾點（只在打字時叫） */
+const clock = () => Date.now();
+
+/** 預設日期：今天，下一個整點（太晚就今天 23:00） */
+export const defaultDue = (now = Date.now()) => {
+  const d = new Date(now);
+  d.setHours(Math.min(23, d.getHours() + 1), 0, 0, 0);
   return d.getTime();
 };
 
@@ -81,6 +84,23 @@ export function ItemEditor({
   const isImage = draft.type === 'image';
   /** 從工具列的「待辦」新增的：清單是主角，文字只是清單名稱 */
   const listFirst = isNew && initial.tasks.length > 0;
+  /** 公告：日期放在內容下面第二行，一打開就看得到、改得到（照打開時決定，改重要程度時不會跳位置） */
+  const dateFirst = initial.priority !== 'none' && initial.type !== 'image';
+  /** 新增時：內容裡寫了日期時間就自動帶到日期欄；自己動過日期欄之後就不再改 */
+  const [autoDate, setAutoDate] = useState(isNew);
+  const [autoFound, setAutoFound] = useState(false);
+  const changeText = (text: string) => {
+    const found = autoDate ? parseWhen(text, clock()) : null;
+    // 每次都從打開時的日期重新套；內容裡的日期時間刪掉了，日期欄也回到打開時的樣子
+    if (found) set({ text, dueAt: applyWhen(found, initial.dueAt, defaultDue()) });
+    else set(autoFound ? { text, dueAt: initial.dueAt } : { text });
+    if (autoDate) setAutoFound(found !== null);
+  };
+  const changeDue = (dueAt: number | null) => {
+    setAutoDate(false);
+    setAutoFound(false);
+    set({ dueAt });
+  };
 
   const save = async () => {
     const tasks = cleanTasks(draft.tasks);
@@ -112,6 +132,24 @@ export function ItemEditor({
           ? '新增待辦清單'
           : '新增便利貼'
     : '編輯';
+
+  const dateField = (
+    <>
+      <View style={s.row}>
+        <Label style={s.rowLabel}>日期時間（活動、截止日）</Label>
+        <Switch value={draft.dueAt !== null} onValueChange={(on) => changeDue(on ? defaultDue() : null)} />
+      </View>
+      {draft.dueAt !== null ? (
+        <>
+          <DateTimeField value={draft.dueAt} onChange={changeDue} />
+          <Text style={s.hint}>
+            {autoFound ? '✨ 從內容自動帶入：' : ''}
+          {whenLabel(draft.dueAt)}・{countdownLabel(draft.dueAt)}。小工具會倒數，並在前一天、前一小時、準時提醒。
+          </Text>
+        </>
+      ) : null}
+    </>
+  );
 
   return (
     <Sheet
@@ -148,7 +186,8 @@ export function ItemEditor({
         </>
       ) : (
         <>
-          <NoteText draft={draft} autoFocus={isNew && !listFirst} listFirst={listFirst} onChange={(text) => set({ text })} />
+          <NoteText draft={draft} autoFocus={isNew && !listFirst} listFirst={listFirst} onChange={changeText} />
+          {dateFirst ? dateField : null}
           <ChecklistEditor tasks={draft.tasks} focusFirst={listFirst} onChange={(tasks) => set({ tasks })} />
         </>
       )}
@@ -215,18 +254,7 @@ export function ItemEditor({
           : '會出現在每個人的桌面小工具上，直到對方按「我知道了」'}
       </Text>
 
-      <View style={s.row}>
-        <Label style={s.rowLabel}>日期時間（活動、截止日）</Label>
-        <Switch value={draft.dueAt !== null} onValueChange={(on) => set({ dueAt: on ? defaultDue() : null })} />
-      </View>
-      {draft.dueAt !== null ? (
-        <>
-          <DateTimeField value={draft.dueAt} onChange={(dueAt) => set({ dueAt })} />
-          <Text style={s.hint}>
-            {whenLabel(draft.dueAt)}・{countdownLabel(draft.dueAt)}。小工具會倒數，並在前一天、前一小時、準時提醒。
-          </Text>
-        </>
-      ) : null}
+      {dateFirst ? null : dateField}
 
       <Label>狀態（當待辦事項用）</Label>
       <StatusPicker value={draft.status} onChange={(status) => set({ status })} />
