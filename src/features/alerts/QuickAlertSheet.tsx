@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 
 import { askConfirm } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Ionicons, Label, Segmented, Squishy } from '@/components/ui';
+import { Button, C, F, Ionicons, Label, Segmented, Squishy, themed } from '@/components/ui';
 import { errorMessage } from '@/lib/errors';
 import {
   isFromPreset,
@@ -502,7 +502,7 @@ function PresetForm({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   hintRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
   hint: { flex: 1, fontSize: 14, color: C.sub, lineHeight: 20 },
   editLink: {
@@ -512,7 +512,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 10,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#FFF0F6',
+    backgroundColor: C.primary + '14',
   },
   editLinkText: { fontFamily: F.display, fontSize: 13, color: C.primary },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
@@ -532,9 +532,9 @@ const s = StyleSheet.create({
   },
   presetUrgent: { backgroundColor: C.urgent, borderColor: '#E84A5E' },
   // 已經送出：像按下去卡住的按鈕，換成淡色底＋粗框
-  presetSent: { backgroundColor: '#FFF0F6', borderColor: C.primary, borderBottomWidth: 2, marginTop: 2 },
+  presetSent: { backgroundColor: C.primary + '14', borderColor: C.primary, borderBottomWidth: 2, marginTop: 2 },
   presetSentUrgent: { backgroundColor: '#FFE8EB', borderColor: C.urgent },
-  presetAdd: { borderStyle: 'dashed', borderBottomWidth: 2, backgroundColor: '#FFFAFC', justifyContent: 'center' },
+  presetAdd: { borderStyle: 'dashed', borderBottomWidth: 2, backgroundColor: C.primary + '08', justifyContent: 'center' },
   previewTile: { alignSelf: 'flex-start', minWidth: 180, marginBottom: 4 },
   presetEmoji: { fontSize: 26 },
   presetEmojiBox: { width: 32, height: 32 },
@@ -578,7 +578,7 @@ const s = StyleSheet.create({
     padding: 10,
     borderRadius: 18,
     borderWidth: 2,
-    borderColor: '#FFC2D6',
+    borderColor: C.primary + '66',
     backgroundColor: '#FFF',
   },
   sentRowSub: { fontFamily: F.display, fontSize: 12, color: C.sub, marginTop: 2 },
@@ -587,13 +587,13 @@ const s = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#F4EEFF',
+    backgroundColor: C.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  emojiChipOn: { borderColor: C.primary, backgroundColor: '#FFF0F6' },
+  emojiChipOn: { borderColor: C.primary, backgroundColor: C.primary + '14' },
   emojiChipText: { fontSize: 20 },
   input: {
     backgroundColor: '#FFF',
@@ -613,4 +613,4 @@ const s = StyleSheet.create({
   back: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 12, height: 28 },
   backText: { fontFamily: F.display, fontSize: 14, color: C.sub },
   error: { color: C.urgent, fontFamily: F.display, fontSize: 14, marginTop: 10 },
-});
+}));

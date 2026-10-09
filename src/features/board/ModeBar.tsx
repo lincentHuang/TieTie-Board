@@ -1,16 +1,15 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
-import { C, F, Ionicons, type IconName } from '@/components/ui';
+import { C, F, type IconName, Ionicons, themed } from '@/components/ui';
 
 import type { ViewMode } from './useViewPrefs';
 
 const MODES: { mode: ViewMode; icon: IconName; label: string; hint: string }[] = [
-  { mode: 'swipe', icon: 'list', label: '滑動', hint: '滑動：像網頁一樣上下捲，依日期排' },
+  { mode: 'queue', icon: 'walk', label: '排隊', hint: '排隊：公告和記事各排一隊、依日期排，上下捲、左右滑切換' },
   { mode: 'free', icon: 'hand-left', label: '自由', hint: '自由擺放：大家看到一樣的排版' },
-  { mode: 'queue', icon: 'walk', label: '排隊', hint: '排隊：全部自動排整齊，只有你的畫面會變' },
 ];
 
-/** 左上角切換怎麼看白板（只影響自己的畫面）；compact = 手機上右邊還有縮放按鈕，沒選的只放圖示 */
+/** 左上角切換怎麼看白板（只影響自己的畫面）；再點一次目前的模式 = 回到開頭 / 看全部；compact = 手機上右邊還有分頁，沒選的只放圖示 */
 export function ModeBar({
   mode,
   compact = false,
@@ -41,7 +40,7 @@ export function ModeBar({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   bar: {
     position: 'absolute',
     left: 12,
@@ -62,4 +61,4 @@ const s = StyleSheet.create({
   btn: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 9, borderRadius: 14 },
   btnOn: { backgroundColor: C.primary },
   text: { fontSize: 13, fontFamily: F.display, color: C.sub },
-});
+}));

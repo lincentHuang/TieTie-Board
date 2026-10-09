@@ -38,7 +38,6 @@ export function useSelection() {
     /** 只選這一個（例如從公告清單「在白板上找」） */
     only: (id: string) => setSel({ ids: [id], multi: false }),
     selectAll: (ids: string[]) => setSel(ids.length ? { ids, multi: true } : NONE),
-    drop: (ids: string[]) => setSel((cur) => without(cur, ids)),
     clear: () => setSel(NONE),
   };
 }

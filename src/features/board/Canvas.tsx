@@ -1,38 +1,51 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   FadeIn,
   FadeOut,
   LinearTransition,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDecay,
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { C, F, Ionicons } from '@/components/ui';
+import { C, F, Ionicons, themed } from '@/components/ui';
 import { useBlockPullToClose } from '@/components/useBlockPullToClose';
-import { byQueueOrder, type BoardItem, type Geometry } from '@/lib/types';
+import { byQueueOrder, isItemDone, type BoardItem, type Geometry } from '@/lib/types';
 
 import { CanvasItem, type GroupDrag, type Hit } from './CanvasItem';
 import { ModeBar } from './ModeBar';
-import { QueueBar } from './QueueBar';
-import { filterChips, groupQueue, matchesFilter, type Filter, type QueueGroup } from './queue-filter';
 import { queueLayout } from './queue-layout';
+import { queuePages } from './queue-order';
+import { QueueTabs } from './QueueTabs';
 import type { ViewMode } from './useViewPrefs';
 import { nervousness, shoveAside, strollStep, type Move, type Point } from './wander';
 
 const MIN_SCALE = 0.15;
 const MAX_SCALE = 4;
 const GRID = 32;
-/** 排隊模式：隊伍左右留白、上面留給按鈕和狀態列 */
-const QUEUE_PAD = 24;
-const BAR_TOP = 60;
-/** 狀態列收起來時的高度；攤開後會變高，隊伍就往下讓位 */
-const BAR_H = 42;
-const BAR_GAP = 22;
+/** 排隊模式：隊伍左右留白、上面留給模式按鈕和分頁、下面留給工具列 */
+const QUEUE_PAD = 16;
+const QUEUE_TOP = 64;
+/** 排隊時精簡的卡片：最矮多高、最多長到原本的幾倍（字太多時多露一點） */
+const FIT_MIN_H = 84;
+const FIT_MAX_GROW = 1.5;
+/** 一排放不下兩張的窄畫面（手機）：卡片拉到跟畫面一樣寬，字少換行、卡片更矮 */
+const STRETCH_BELOW = 520;
+/** 拉寬的卡片最寬多寬 */
+const STRETCH_MAX = 480;
+const QUEUE_BOTTOM = 170;
+/** 隊伍最後面的「新增」卡片 */
+const ADD_GAP = 30;
+const ADD_H = 110;
+/** 左右滑超過畫面寬的幾成、或滑得夠快，就換頁 */
+const PAGE_FLIP = 0.2;
+const PAGE_FLING = 500;
 /** 沒看的公告多久往畫面中間走一小段、一段走多遠（螢幕像素）；被手指放下之後休息幾趟再走（約 15 秒） */
 const STROLL_EVERY = 3200;
 const STROLL_STEP = 110;
@@ -50,10 +63,10 @@ const TOUCH =
 export interface CanvasHandle {
   /** 目前畫面中心在白板上的座標 */
   viewCenter: () => { x: number; y: number };
-  /** 把鏡頭移到這個項目；排隊時如果它被篩選藏起來，會先清掉篩選 */
+  /** 把鏡頭移到這個項目；排隊時會先換到它那一頁 */
   focus: (id: string) => void;
   fitAll: () => void;
-  /** 現在白板上看得到的項目（排隊時不含被篩選藏起來的），多選「全選」用 */
+  /** 現在白板上看得到的項目（排隊時是目前這一頁），多選「全選」用 */
   visibleIds: () => string[];
 }
 
@@ -64,9 +77,6 @@ interface Props {
   /** true = 排隊模式（只影響自己的畫面），false = 自由擺放（位置大家同步） */
   queued: boolean;
   onChangeMode: (mode: ViewMode) => void;
-  /** 排隊時怎麼分隊 */
-  group: QueueGroup;
-  onChangeGroup: (group: QueueGroup) => void;
   selectedIds: string[];
   /** 長按進入的多選模式 */
   multi: boolean;
@@ -75,14 +85,16 @@ interface Props {
   memberCount: number;
   onTap: (id: string) => void;
   onLongPress: (id: string) => void;
-  /** 點了空白的地方 */
+  /** 點了空白的地方、換了一頁 */
   onClear: () => void;
-  /** 這些選取的項目被篩選藏起來了 */
-  onHide: (ids: string[]) => void;
   onOpen: (id: string) => void;
+  /** 放大後直接點卡片上的一項待辦 */
+  onToggleTask: (id: string, taskId: string) => void;
   onCommit: (id: string, geo: Geometry) => void;
   /** 多選時整批一起拖完：每個選取的項目移到哪 */
   onCommitGroup: (moves: { id: string; x: number; y: number }[]) => void;
+  /** 排隊時最後面的「新增」卡片：true = 公告那頁 */
+  onAdd: (announcement: boolean) => void;
 }
 
 export function Canvas({
@@ -91,8 +103,6 @@ export function Canvas({
   now,
   queued,
   onChangeMode,
-  group,
-  onChangeGroup,
   selectedIds,
   multi,
   isPending,
@@ -101,10 +111,11 @@ export function Canvas({
   onTap,
   onLongPress,
   onClear,
-  onHide,
   onOpen,
+  onToggleTask,
   onCommit,
   onCommitGroup,
+  onAdd,
 }: Props) {
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
@@ -128,25 +139,64 @@ export function Canvas({
   /** 被手指放下的公告還要休息幾趟才繼續走 */
   const resting = useRef<Record<string, number>>({});
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [zoomText, setZoomText] = useState('100%');
   const containerRef = useRef<View>(null);
   const didInitialFit = useRef(false);
   const wasQueued = useRef(queued);
   const lastWidth = useRef(0);
-  // 篩選只影響自己的畫面，關掉 App 就清掉，免得下次打開漏看新公告
-  const [filter, setFilter] = useState<Filter>([]);
-  const [barH, setBarH] = useState(BAR_H);
-  const queueTop = BAR_TOP + barH + BAR_GAP;
 
-  // 排隊：篩選 → 照順序 → 分隊 → 一排一排站好，一排的寬度剛好是畫面寬（100% 時不用左右滑）
-  const ctx = { now, isPending };
-  const lineUp = (f: Filter, g: QueueGroup) => {
-    const visible = queued ? items.filter((i) => matchesFilter(i, f, ctx)) : items;
-    const secs = groupQueue([...visible].sort(byQueueOrder(now)), g, now);
-    const widest = Math.max(0, ...visible.map((i) => i.w));
-    return { visible, secs, layout: queueLayout(secs, Math.max(widest, size.w - QUEUE_PAD * 2)) };
-  };
-  const { visible: shown, secs: sections, layout: queue } = lineUp(filter, group);
+  // 排隊：公告一頁、記事一頁並排（左右滑切換），每頁依日期一段一段站好，一排的寬度剛好是畫面寬
+  const [page, setPage] = useState(0);
+  /** 每一頁捲到哪（換頁回來時接著看） */
+  const scrollOf = useSharedValue<number[]>([]);
+  // 手勢裡要用：這次是左右滑（1）還是上下捲（2），以及開始時的位置
+  const axis = useSharedValue(0);
+  const panFrom = useSharedValue({ x: 0, y: 0 });
+  const wheelX = useRef({ sum: 0, until: 0 });
+  // 排隊時精簡空間：便利貼高度剛好裝下內容；手機上拉成跟畫面一樣寬（照片、貼圖維持原本大小）
+  const [fitH, setFitH] = useState<Record<string, number>>({});
+  const reportFit = (id: string, height: number) =>
+    setFitH((cur) => (Math.abs((cur[id] ?? -99) - height) < 3 ? cur : { ...cur, [id]: height }));
+  const room = size.w - QUEUE_PAD * 2;
+  const stretch = room > 0 && room < STRETCH_BELOW;
+  const sized = items.map((i) => {
+    if (i.type !== 'note') return i;
+    const w = stretch ? Math.min(STRETCH_MAX, room) : i.w;
+    const fit = fitH[i.id];
+    const h = fit ? Math.round(Math.min(i.h * FIT_MAX_GROW, Math.max(FIT_MIN_H, fit))) : i.h;
+    return { ...i, w, h };
+  });
+  // 完成的（狀態完成、或待辦全勾完）收進封存：平常不排隊，按右上角 📦 才看得到，把狀態改回來就回到隊伍
+  const [archive, setArchive] = useState(false);
+  /** 換到封存 / 隊伍之後要對準的項目 */
+  const focusAfter = useRef<string | null>(null);
+  const archivedCount = items.filter(isItemDone).length;
+  const pages = queuePages(queued ? sized.filter((i) => isItemDone(i) === archive) : items, now);
+  const widest = Math.max(0, ...pages.flatMap((p) => p.items.map((i) => i.w)));
+  const lanes = pages.map((p) => queueLayout(p.sections, Math.max(widest, size.w - QUEUE_PAD * 2)));
+  /** 排隊時固定的縮放：有比畫面寬的卡片才縮小，不給放大縮小 */
+  const fit = size.w ? Math.min(1, (size.w - QUEUE_PAD * 2) / Math.max(1, ...lanes.map((l) => l.width))) : 1;
+  /** 一頁在白板上多寬：剛好是畫面寬 */
+  const pageW = size.w / fit;
+  const laneX = (p: number) => p * pageW + (pageW - lanes[p].width) / 2;
+  const queueSpots = new Map<string, Geometry>();
+  const pageOf = new Map<string, number>();
+  lanes.forEach((lane, p) =>
+    lane.spots.forEach((g, id) => {
+      queueSpots.set(id, { ...g, x: g.x + laneX(p) });
+      pageOf.set(id, p);
+    }),
+  );
+  const addW = (p: number) => Math.max(lanes[p].width, Math.min(320, pageW - QUEUE_PAD * 2));
+  const addSpot = (p: number) => ({
+    x: p * pageW + (pageW - addW(p)) / 2,
+    y: lanes[p].height + (lanes[p].height ? ADD_GAP : 0),
+    w: addW(p),
+  });
+  /** 上下捲的範圍：最上面是隊伍開頭，最下面是「新增」卡片剛好在工具列上面 */
+  const topY = QUEUE_TOP;
+  const bottomY = (p: number) =>
+    Math.min(topY, size.h - QUEUE_BOTTOM - (addSpot(p).y + ADD_H) * fit);
+  const clampY = (p: number, y: number) => Math.min(topY, Math.max(bottomY(p), y));
 
   // 自由擺放時：沒看的公告走向畫面中間，擋路的卡片被擠開（減少動態效果時不走）
   const strolling = !queued && !reduced;
@@ -155,16 +205,18 @@ export function Canvas({
     walkers.map((i) => ({ ...geometryOf(i), ...wander[i.id] })),
     items.filter((i) => !walkers.includes(i)),
   );
-  const spotOf = (item: BoardItem, q = queue): Geometry => {
-    if (queued) return q.spots.get(item.id) ?? geometryOf(item);
+  const spotOf = (item: BoardItem): Geometry => {
+    if (queued) return queueSpots.get(item.id) ?? geometryOf(item);
     const at = (walkers.includes(item) ? wander[item.id] : undefined) ?? shoved.get(item.id);
     return at ? { ...geometryOf(item), ...at } : geometryOf(item);
   };
   const moveOf = (item: BoardItem): Move =>
     queued ? 'walk' : walkers.includes(item) ? 'stroll' : shoved.has(item.id) ? 'shove' : 'walk';
-  // 一個接一個出發，整隊最多等 1.2 秒
-  const walkStep = Math.min(90, 1200 / Math.max(1, shown.length));
-  const orderOf = new Map(sections.flatMap((sec) => sec.items).map((item, i) => [item.id, i]));
+  // 每一頁一個接一個出發，整隊最多等 1.2 秒
+  const walkStep = Math.min(90, 1200 / Math.max(1, ...pages.map((p) => p.items.length)));
+  const orderOf = new Map(
+    pages.flatMap((p) => p.sections.flatMap((sec) => sec.items).map((item, i) => [item.id, i] as const)),
+  );
 
   /** 沒看的公告往畫面中間走一小段：越緊急的越先走；被選起來、剛被放下的這次不走 */
   const stroll = () => {
@@ -241,19 +293,27 @@ export function Canvas({
     tx.set(withTiming(nx, t));
     ty.set(withTiming(ny, t));
     scale.set(withTiming(ns, t));
-    setZoomText(`${Math.round(ns * 100)}%`);
   };
 
-  /** 排隊模式的起始畫面：隊伍最前面、寬度剛好塞滿畫面 */
-  const showQueue = (q = queue, top = queueTop) => {
-    const s = Math.min(1, (size.w - QUEUE_PAD * 2) / Math.max(1, q.width));
-    animateTo((size.w - q.width * s) / 2, top, s);
+  /** 排隊：換到第 p 頁，捲到 y（沒給就回到上次看到的地方） */
+  const goPage = (p: number, y?: number) => {
+    if (!size.w) return;
+    const saved = [...scrollOf.get()];
+    saved[page] = ty.get();
+    scrollOf.set(saved);
+    setPage(p);
+    animateTo(-p * size.w, clampY(p, y ?? saved[p] ?? topY), fit);
+  };
+  /** 使用者自己換頁：選取的東西在另一頁看不到了，先取消 */
+  const flipTo = (p: number) => {
+    if (p !== page) onClear();
+    goPage(p);
   };
 
   const fitAll = () => {
     if (!size.w || !size.h) return;
+    if (queued) return goPage(page, topY);
     if (items.length === 0) return animateTo(size.w / 2 - 150, size.h / 2 - 150, 1);
-    if (queued) return showQueue();
     const minX = Math.min(...items.map((i) => i.x));
     const minY = Math.min(...items.map((i) => i.y));
     const maxX = Math.max(...items.map((i) => i.x + i.w));
@@ -271,57 +331,36 @@ export function Canvas({
   };
 
   useImperativeHandle(ref, () => ({
-    viewCenter: () => ({
-      x: (size.w / 2 - tx.get()) / scale.get(),
-      y: (size.h / 2 - ty.get()) / scale.get(),
-    }),
+    // 排隊時沒有固定的白板座標：新項目由外面決定放哪
+    viewCenter: () =>
+      queued
+        ? { x: NaN, y: NaN }
+        : { x: (size.w / 2 - tx.get()) / scale.get(), y: (size.h / 2 - ty.get()) / scale.get() },
     focus: (id) => {
       const item = items.find((i) => i.id === id);
       if (!item) return;
-      let q = queue;
-      // 被篩選藏起來了 → 先清掉篩選，照清掉之後的隊伍找它站在哪
-      if (!shown.includes(item)) {
-        setFilter([]);
-        q = lineUp([], group).layout;
+      // 要找的在另一邊（封存 / 隊伍）→ 先換過去，排好之後再對準它
+      if (queued && isItemDone(item) !== archive) {
+        focusAfter.current = id;
+        setArchive(!archive);
+        return;
       }
-      const g = spotOf(item, q);
+      const g = spotOf(item);
+      if (queued) {
+        const p = pageOf.get(id) ?? page;
+        return goPage(p, size.h / 2 - (g.y + g.h / 2) * fit);
+      }
       const s = Math.min(1.5, Math.max(0.6, Math.min(size.w / (g.w * 1.6), size.h / (g.h * 1.6))));
       animateTo(size.w / 2 - (g.x + g.w / 2) * s, size.h / 2 - (g.y + g.h / 2) * s, s);
     },
     fitAll,
-    visibleIds: () => shown.map((i) => i.id),
+    visibleIds: () => (queued ? pages[page].items : items).map((i) => i.id),
   }));
 
-  // 換了篩選或分隊 → 隊伍重排，鏡頭回到隊伍開頭
-  const changeFilter = (next: Filter) => {
-    setFilter(next);
-    showQueue(lineUp(next, group).layout);
-  };
-  const changeGroup = (next: QueueGroup) => {
-    onChangeGroup(next);
-    showQueue(lineUp(filter, next).layout);
-  };
-  const toggleFilter = (key: string) =>
-    changeFilter(filter.includes(key) ? filter.filter((k) => k !== key) : [...filter, key]);
-  // 狀態列攤開 / 收起 → 隊伍跟著往下讓位 / 回來，才不會被蓋住
-  const resizeBar = (h: number) => {
-    if (Math.abs(h - barH) < 1) return;
-    setBarH(h);
-    showQueue(queue, BAR_TOP + h + BAR_GAP);
-  };
 
-  // 選取的項目被篩選藏起來了 → 取消選取，免得工具列在操作看不到的東西
-  const hiddenSelected = selectedIds.filter((id) => items.some((i) => i.id === id) && !shown.some((i) => i.id === id));
-  const hiddenKey = hiddenSelected.join(',');
+  // 第一次拿到資料時，自動縮放到看得見全部（排隊時站到公告那頁開頭）
   useEffect(() => {
-    if (hiddenSelected.length) onHide(hiddenSelected);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hiddenKey]);
-
-
-  // 第一次拿到資料時，自動縮放到看得見全部
-  useEffect(() => {
-    if (didInitialFit.current || !size.w || items.length === 0) return;
+    if (didInitialFit.current || !size.w || (items.length === 0 && !queued)) return;
     didInitialFit.current = true;
     fitAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -335,23 +374,48 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queued]);
 
-  // 排隊時畫面寬度變了（轉向、調整視窗）→ 隊伍會重排，鏡頭也回到隊伍開頭
+  // 換到封存 / 隊伍之後：有要找的就對準它，不然回到這頁開頭
+  const wasArchive = useRef(archive);
+  useEffect(() => {
+    if (wasArchive.current === archive) return;
+    wasArchive.current = archive;
+    const id = focusAfter.current;
+    focusAfter.current = null;
+    const g = id ? queueSpots.get(id) : undefined;
+    if (id && g) goPage(pageOf.get(id) ?? page, size.h / 2 - (g.y + g.h / 2) * fit);
+    else goPage(page, topY);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [archive]);
+  const toggleArchive = () => {
+    onClear();
+    setArchive((a) => !a);
+  };
+
+  // 排隊時畫面寬度變了（轉向、調整視窗）→ 隊伍會重排，鏡頭對準目前這一頁
   useEffect(() => {
     const prev = lastWidth.current;
     lastWidth.current = size.w;
-    if (queued && prev && prev !== size.w) showQueue();
+    if (queued && prev && prev !== size.w) goPage(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.w]);
+
+  // 排隊時隊伍變短了（刪掉、換到另一頁）→ 捲過頭的話拉回來
+  const pageBottom = size.w ? bottomY(page) : 0;
+  useEffect(() => {
+    if (!queued || !size.w) return;
+    const y = ty.get();
+    if (y < pageBottom) ty.set(withTiming(pageBottom, { duration: 300 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageBottom]);
 
   const zoomAround = (fx: number, fy: number, ns: number) => {
     const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, ns));
     tx.set(fx - ((fx - tx.get()) / scale.get()) * s);
     ty.set(fy - ((fy - ty.get()) / scale.get()) * s);
     scale.set(s);
-    setZoomText(`${Math.round(s * 100)}%`);
   };
 
-  // 網頁：滾輪平移、Ctrl/⌘ + 滾輪（或觸控板雙指捏合）縮放
+  // 網頁：滾輪平移、Ctrl/⌘ + 滾輪（或觸控板雙指捏合）縮放；排隊時滾輪上下捲、觸控板左右滑換頁
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const el = containerRef.current as unknown as HTMLElement | null;
@@ -359,6 +423,24 @@ export function Canvas({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
+      if (queued) {
+        const w = wheelX.current;
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+          w.sum += e.deltaX;
+          // 觸控板一次左右滑會連續來很多下：換一頁之後先停一下，免得一次翻過頭
+          const t = Date.now();
+          if (Math.abs(w.sum) > 60 && t > w.until) {
+            w.until = t + 600;
+            const next = Math.min(pages.length - 1, Math.max(0, page + Math.sign(w.sum)));
+            w.sum = 0;
+            flipTo(next);
+          }
+        } else {
+          w.sum = 0;
+          if (!e.ctrlKey && !e.metaKey) ty.set(clampY(page, ty.get() - e.deltaY));
+        }
+        return;
+      }
       if (e.ctrlKey || e.metaKey) {
         zoomAround(e.clientX - rect.left, e.clientY - rect.top, scale.get() * Math.exp(-e.deltaY * 0.01));
       } else {
@@ -375,6 +457,10 @@ export function Canvas({
 
   // 平移和縮放都只套用「這一格跟上一格的差」，不記手勢開始時的位置：
   // 以前兩個手勢各自從開始時的位置重算，一根手指先放開、縮放結束時，平移就用舊的起點把畫面拉回去（跳一下）
+  // 排隊：上下捲（放開後還會滑一段）、左右滑換頁；捲過頭會有點彈性，放開再彈回來
+  const lastPage = pages.length - 1;
+  const flipW = size.w;
+  const minY = size.w ? bottomY(page) : 0;
   const pan = Gesture.Pan()
     .minDistance(8)
     .averageTouches(true)
@@ -382,17 +468,55 @@ export function Canvas({
       ignorePan.set(itemBusy.get());
       // 從 0 開始算：手指在啟動前已經移動的那一段也補上，畫面才會一直黏在手指下
       panLast.set({ x: 0, y: 0, n: e.numberOfPointers });
+      if (queued) {
+        cancelAnimation(tx);
+        cancelAnimation(ty);
+        axis.set(0);
+        panFrom.set({ x: tx.get(), y: ty.get() });
+      }
     })
     .onUpdate((e) => {
+      if (queued) {
+        // 先看手指往哪個方向走得比較多，決定這次是換頁還是捲動（之後就不換）
+        if (axis.get() === 0) {
+          if (Math.hypot(e.translationX, e.translationY) < 10) return;
+          axis.set(Math.abs(e.translationX) > Math.abs(e.translationY) ? 1 : 2);
+        }
+        const from = panFrom.get();
+        if (axis.get() === 1) {
+          const edge = (page === 0 && e.translationX > 0) || (page === lastPage && e.translationX < 0);
+          tx.set(from.x + e.translationX * (edge ? 0.3 : 1));
+        } else {
+          let ny = from.y + e.translationY;
+          if (ny > topY) ny = topY + (ny - topY) * 0.35;
+          if (ny < minY) ny = minY + (ny - minY) * 0.35;
+          ty.set(ny);
+        }
+        return;
+      }
       const last = panLast.get();
       panLast.set({ x: e.translationX, y: e.translationY, n: e.numberOfPointers });
       // 手指數量變了：這一格的位移是重心換位置造成的，不是手指在動，不算
       if (ignorePan.get() || e.numberOfPointers !== last.n) return;
       tx.set(tx.get() + e.translationX - last.x);
       ty.set(ty.get() + e.translationY - last.y);
+    })
+    .onEnd((e) => {
+      if (!queued) return;
+      if (axis.get() === 1) {
+        let next = page;
+        if (e.translationX < -flipW * PAGE_FLIP || e.velocityX < -PAGE_FLING) next = Math.min(lastPage, page + 1);
+        if (e.translationX > flipW * PAGE_FLIP || e.velocityX > PAGE_FLING) next = Math.max(0, page - 1);
+        scheduleOnRN(flipTo, next);
+        return;
+      }
+      const y = ty.get();
+      if (y > topY || y < minY) ty.set(withTiming(Math.min(topY, Math.max(minY, y)), { duration: 280 }));
+      else ty.set(withDecay({ velocity: e.velocityY, clamp: [minY, topY] }));
     });
 
   const pinch = Gesture.Pinch()
+    .enabled(!queued)
     .onStart((e) => {
       pinchLast.set({ s: e.scale, n: e.numberOfPointers });
     })
@@ -409,9 +533,6 @@ export function Canvas({
       tx.set(fx - ((fx - tx.get()) / s0) * s1);
       ty.set(fy - ((fy - ty.get()) / s0) * s1);
       scale.set(s1);
-    })
-    .onEnd(() => {
-      scheduleOnRN(setZoomText, `${Math.round(scale.get() * 100)}%`);
     });
 
   const tapEmpty = Gesture.Tap().onEnd(() => scheduleOnRN(onClear));
@@ -427,7 +548,14 @@ export function Canvas({
     transform: [{ translateX: (tx.get() % GRID) - GRID }, { translateY: (ty.get() % GRID) - GRID }],
   }));
 
-  const sorted = [...shown].sort((a, b) => a.z - b.z);
+  // 排隊時只擺隊伍裡的（封存的 / 還沒封存的另一邊不出現）
+  const sorted = (queued ? items.filter((i) => queueSpots.has(i.id)) : [...items]).sort((a, b) => a.z - b.z);
+  const floors = queued
+    ? lanes.flatMap((lane, p) => lane.floors.map((f) => ({ ...f, key: `${p}:${f.key}`, x: f.x + laneX(p) })))
+    : [];
+  const signs = queued
+    ? lanes.flatMap((lane, p) => lane.signs.map((sign) => ({ ...sign, key: `${p}:${sign.key}`, x: sign.x + laneX(p) })))
+    : [];
 
   return (
     <View
@@ -444,8 +572,7 @@ export function Canvas({
         <View style={StyleSheet.absoluteFill}>
           <DotGrid style={gridStyle} width={size.w} height={size.h} />
           <Animated.View style={[s.world, worldStyle]}>
-            {queued
-              ? queue.floors.map((f) => (
+            {floors.map((f) => (
                   <Animated.View
                     key={f.key}
                     entering={FadeIn.delay(500)}
@@ -454,10 +581,8 @@ export function Canvas({
                     pointerEvents="none"
                     style={[s.floor, { left: f.x, top: f.y, width: f.w }, f.color ? { backgroundColor: f.color + '55' } : null]}
                   />
-                ))
-              : null}
-            {queued
-              ? queue.signs.map((sign) => (
+                ))}
+            {signs.map((sign) => (
                   <Animated.View
                     key={sign.key}
                     entering={FadeIn.delay(300)}
@@ -475,6 +600,28 @@ export function Canvas({
                     </View>
                     <View style={[s.signPost, { backgroundColor: sign.color }]} />
                   </Animated.View>
+                ))}
+            {queued && size.w
+              ? pages.map((p, i) => (
+                  archive ? (
+                    <AddCard
+                      key={`archive-${p.key}`}
+                      spot={addSpot(i)}
+                      icon="arrow-undo"
+                      label="回到隊伍"
+                      sub={p.items.length ? '把狀態改回來，就會回到隊伍裡' : `沒有完成的${p.label}`}
+                      onPress={toggleArchive}
+                    />
+                  ) : (
+                    <AddCard
+                      key={p.key}
+                      spot={addSpot(i)}
+                      icon="add-circle"
+                      label={`新增${p.label}`}
+                      sub={p.items.length ? '看完了～要貼新的嗎？' : `還沒有${p.label}，貼第一張吧`}
+                      onPress={() => onAdd(p.key === 'notice')}
+                    />
+                  )
                 ))
               : null}
             {/* 還不知道畫面多寬時先不擺，免得排隊的人一出現就要換位置 */}
@@ -497,7 +644,7 @@ export function Canvas({
                   stepOver={stepOver}
                   selected={picked}
                   multi={multi}
-                  // 排隊時不能拖；多選、用手指時只有選起來的能拖；用滑鼠時直接拖
+                  // 排隊時不能拖（在卡片上拖 = 捲動 / 換頁）；多選、用手指時只有選起來的能拖；用滑鼠時直接拖
                   draggable={!queued && (picked || (!multi && !TOUCH))}
                   pending={isPending(item)}
                   readCount={readCount(item)}
@@ -505,8 +652,10 @@ export function Canvas({
                   onTap={onTap}
                   onLongPress={onLongPress}
                   onOpen={onOpen}
+                  onToggleTask={onToggleTask}
                   onCommit={commit}
                   onCommitGroup={commitGroup}
+                  onFit={queued ? reportFit : undefined}
                 />
               );
             }) : null}
@@ -514,53 +663,64 @@ export function Canvas({
         </View>
       </GestureDetector>
 
-      {queued && items.length > 0 && shown.length === 0 ? (
-        <View style={[s.noMatch, { top: queueTop + 60 }]} pointerEvents="box-none">
-          <Text style={s.noMatchTitle}>沒有符合的項目</Text>
-          <Pressable onPress={() => changeFilter([])} style={({ pressed }) => [s.noMatchBtn, pressed && { opacity: 0.6 }]}>
-            <Text style={s.noMatchBtnText}>看全部</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
       {queued ? (
-        <QueueBar
-          top={BAR_TOP}
-          total={items.length}
-          chips={filterChips(items, filter, ctx)}
-          filter={filter}
-          group={group}
-          onToggle={toggleFilter}
-          onClear={() => changeFilter([])}
-          onChangeGroup={changeGroup}
-          onResize={resizeBar}
+        <QueueTabs
+          pages={pages}
+          page={page}
+          onChange={flipTo}
+          archive={archive}
+          archivedCount={archivedCount}
+          onToggleArchive={toggleArchive}
         />
       ) : null}
 
-      <ModeBar mode={queued ? 'queue' : 'free'} compact={size.w < 440} onChange={onChangeMode} />
-
-      <View style={s.zoomBar}>
-        <ZoomButton icon="remove" onPress={() => zoomAround(size.w / 2, size.h / 2, scale.get() / 1.25)} />
-        <Pressable onPress={fitAll} style={s.zoomLabel}>
-          <Text style={s.zoomText}>{zoomText}</Text>
-        </Pressable>
-        <ZoomButton icon="add" onPress={() => zoomAround(size.w / 2, size.h / 2, scale.get() * 1.25)} />
-        <ZoomButton icon="scan-outline" onPress={fitAll} />
-      </View>
+      <ModeBar
+        mode={queued ? 'queue' : 'free'}
+        compact={queued && size.w < 440}
+        // 再點一次目前的模式：排隊回到這頁開頭、自由擺放看全部
+        onChange={(m) => (m === (queued ? 'queue' : 'free') ? fitAll() : onChangeMode(m))}
+      />
     </View>
+  );
+}
+
+/** 隊伍最後面的「新增」卡片；看封存時換成「回到隊伍」 */
+function AddCard({
+  spot,
+  icon,
+  label,
+  sub,
+  onPress,
+}: {
+  spot: { x: number; y: number; w: number };
+  icon: 'add-circle' | 'arrow-undo';
+  label: string;
+  sub: string;
+  onPress: () => void;
+}) {
+  const tap = Gesture.Tap()
+    .maxDistance(10)
+    .onEnd((_e, success) => {
+      if (success) scheduleOnRN(onPress);
+    });
+  return (
+    <GestureDetector gesture={tap}>
+      <Animated.View
+        entering={FadeIn.delay(400)}
+        layout={LinearTransition.duration(500)}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={[s.add, { left: spot.x, top: spot.y, width: spot.w, height: ADD_H }]}>
+        <Ionicons name={icon} size={34} color={C.primary} />
+        <Text style={s.addText}>{label}</Text>
+        <Text style={s.addSub}>{sub}</Text>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
 /** 項目在白板上的位置與大小（只取這四個欄位） */
 const geometryOf = (item: BoardItem): Geometry => ({ x: item.x, y: item.y, w: item.w, h: item.h });
-
-function ZoomButton({ icon, onPress }: { icon: 'add' | 'remove' | 'scan-outline'; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [s.zoomBtn, pressed && { opacity: 0.5 }]}>
-      <Ionicons name={icon} size={18} color={C.ink} />
-    </Pressable>
-  );
-}
 
 function DotGrid({ style, width, height }: { style: object; width: number; height: number }) {
   if (!width) return null;
@@ -595,7 +755,7 @@ function DotGrid({ style, width, height }: { style: object; width: number; heigh
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   container: { flex: 1, backgroundColor: C.canvas, overflow: 'hidden' },
   world: { position: 'absolute', left: 0, top: 0, width: 1, height: 1, transformOrigin: 'left top' },
   grid: { position: 'absolute' },
@@ -620,28 +780,17 @@ const s = StyleSheet.create({
   signCount: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 6, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center' },
   signCountText: { fontSize: 13, fontFamily: F.display },
   signPost: { width: 6, height: 10, marginLeft: 16, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, opacity: 0.7 },
-  noMatch: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 12 },
-  noMatchTitle: { fontSize: 20, fontFamily: F.display, color: C.sub },
-  noMatchBtn: { backgroundColor: C.primary, borderRadius: 18, paddingHorizontal: 18, height: 38, justifyContent: 'center' },
-  noMatchBtnText: { fontSize: 15, fontFamily: F.display, color: '#FFF' },
-  zoomBar: {
+  add: {
     position: 'absolute',
-    right: 12,
-    top: 12,
-    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFFEE',
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: C.line,
-    padding: 3,
-    gap: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    justifyContent: 'center',
+    gap: 4,
+    borderRadius: 24,
+    borderWidth: 3,
+    borderStyle: 'dashed',
+    borderColor: C.primary + '88',
+    backgroundColor: '#FFFFFFAA',
   },
-  zoomBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
-  zoomLabel: { minWidth: 50, height: 34, alignItems: 'center', justifyContent: 'center' },
-  zoomText: { fontSize: 13, fontFamily: F.display, color: C.ink },
-});
+  addText: { fontSize: 18, fontFamily: F.display, color: C.primary },
+  addSub: { fontSize: 13, fontFamily: F.display, color: C.sub },
+}));

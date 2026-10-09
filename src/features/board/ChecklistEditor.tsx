@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { C, F, Ionicons, Label } from '@/components/ui';
+import { C, F, Ionicons, Label, themed } from '@/components/ui';
 import { MAX_TASK_TEXT, MAX_TASKS, type Task } from '@/lib/types';
 
 import { newTask } from './todos';
@@ -13,11 +13,14 @@ import { newTask } from './todos';
 export function ChecklistEditor({
   tasks,
   focusFirst,
+  focusId: focusFrom,
   onChange,
 }: {
   tasks: Task[];
   /** 新的待辦清單：一打開就從第一項開始寫 */
   focusFirst: boolean;
+  /** 外面（內容工具列的「待辦」）剛加的一項：出現時直接可以打字 */
+  focusId?: string;
   onChange: (tasks: Task[]) => void;
 }) {
   /** 剛加的那一項：出現時直接可以打字 */
@@ -60,7 +63,7 @@ export function ChecklistEditor({
             placeholder={i === 0 ? '例：買牛奶' : '下一項'}
             placeholderTextColor="#B9B2CF"
             maxLength={MAX_TASK_TEXT}
-            autoFocus={t.id === focusId}
+            autoFocus={t.id === focusId || t.id === focusFrom}
             returnKeyType="next"
             // 按 Enter 不要收鍵盤，直接接著寫下一項（手機用 submitBehavior、網頁版看 blurOnSubmit）
             submitBehavior="submit"
@@ -88,13 +91,13 @@ export function ChecklistEditor({
         </Pressable>
       )}
       {tasks.length ? (
-        <Text style={s.hint}>大家都可以打勾：點兩下卡片打開來勾，或點白板上方的待辦小膠囊直接勾。</Text>
+        <Text style={s.hint}>大家都可以打勾：點兩下卡片打開來勾、在排隊模式或把白板放大後直接點卡片上的那一項，或點白板上方的待辦小膠囊。</Text>
       ) : null}
     </>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
   input: {
     flex: 1,
@@ -122,4 +125,4 @@ const s = StyleSheet.create({
   addText: { fontSize: 15, fontFamily: F.display, color: C.ink },
   pressed: { opacity: 0.6 },
   hint: { fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 18 },
-});
+}));

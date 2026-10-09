@@ -1,3 +1,4 @@
+import { plainLine, type Selection } from '@/lib/rich-text';
 import { byQueueOrder, isTaskDone, MAX_TASK_TEXT, MAX_TASKS, type BoardItem, type Member, type Task } from '@/lib/types';
 
 /** 新的一項待辦：id 只用小寫英數字（打勾時拿來當 Firestore 欄位名稱） */
@@ -9,6 +10,25 @@ export const cleanTasks = (tasks: Task[]) =>
     .map((t) => ({ id: t.id, text: t.text.trim().slice(0, MAX_TASK_TEXT) }))
     .filter((t) => t.text)
     .slice(0, MAX_TASKS);
+
+/**
+ * 內容裡選到的那幾行搬出來變成待辦（整行搬，前面的「- 」「・」「□」之類的記號、格式記號去掉）；
+ * 回傳拿掉那幾行之後的內容、游標要停的位置、搬出來的文字（空白行不算）
+ */
+export function takeLines(text: string, sel: Selection) {
+  const start = text.lastIndexOf('\n', sel.start - 1) + 1;
+  const nl = text.indexOf('\n', Math.max(sel.end - (sel.end > sel.start ? 1 : 0), sel.start));
+  const end = nl === -1 ? text.length : nl;
+  const lines = text
+    .slice(start, end)
+    .split('\n')
+    .map((l) => plainLine(l).replace(/^\s*(?:(?:[-*•・□☐○◯]|\[[\sxX]?\]|\d+[.、)])\s*)+/, '').trim())
+    .filter(Boolean);
+  // 連同後面的換行一起拿掉；最後一行的話拿掉前面的換行
+  const rest = nl === -1 ? text.slice(0, Math.max(0, start - 1)) : text.slice(0, start) + text.slice(end + 1);
+  const at = Math.min(start, rest.length);
+  return { text: rest, sel: { start: at, end: at }, lines };
+}
 
 /** 內容一樣（項目、文字、順序都一樣） */
 export const sameTasks = (a: Task[], b: Task[]) =>

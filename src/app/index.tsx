@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
 import { useOpenFromNotification } from '@/features/alerts/useOpenFromNotification';
 import { BoardScreen } from '@/features/board/BoardScreen';
@@ -11,7 +11,7 @@ import { useAppHandoff } from '@/features/settings/useAppHandoff';
 import { SetupScreen } from '@/features/setup/SetupScreen';
 import { useJoinFromLink } from '@/features/setup/useJoinFromLink';
 import { usePendingJoins } from '@/features/setup/usePendingJoins';
-import { C, F, Ionicons } from '@/components/ui';
+import { C, F, Ionicons, themed } from '@/components/ui';
 import { joinCodeFrom } from '@/lib/line';
 import { useSession } from '@/lib/session';
 
@@ -74,8 +74,8 @@ export default function Home() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 24 },
   errorTitle: { fontSize: 22, fontFamily: F.display, color: C.ink, marginTop: 8 },
   errorText: { fontSize: 15, color: C.sub, marginTop: 8, textAlign: 'center' },
-});
+}));

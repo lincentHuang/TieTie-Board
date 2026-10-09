@@ -1,8 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Label } from '@/components/ui';
+import { Button, C, F, Label, themed } from '@/components/ui';
 import { itemTitle, type BoardItem } from '@/lib/types';
 
 import { FileRow } from './FileRow';
@@ -48,9 +48,9 @@ export function FilesSheet({
   );
 }
 
-const s = StyleSheet.create({
-  text: { fontSize: 17, fontFamily: F.display, color: C.ink, backgroundColor: '#F7F2FF', borderRadius: 14, padding: 12, lineHeight: 24 },
+const s = themed(() => ({
+  text: { fontSize: 17, fontFamily: F.display, color: C.ink, backgroundColor: C.bg, borderRadius: 14, padding: 12, lineHeight: 24 },
   author: { fontSize: 12, fontFamily: F.display, color: C.sub, marginTop: 6, textAlign: 'right' },
   list: { gap: 8 },
   photos: { marginTop: 14 },
-});
+}));

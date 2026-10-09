@@ -15,16 +15,15 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSprin
 
 import { FONT_DISPLAY } from '@/lib/fonts';
 
-/** 手帳文具風配色：淡紫方格紙＋草莓牛奶粉＋薄荷＋奶油黃，文字用深莓紫取代黑色 */
+import { THEMES, type ThemeColors } from './palettes';
+
+/**
+ * 手帳文具風配色：淡紫方格紙＋草莓牛奶粉＋薄荷＋奶油黃，文字用深莓紫取代黑色。
+ * 背景、文字、主色會跟著設定裡的配色主題換（applyPalette），其他顏色固定。
+ */
 export const C = {
-  bg: '#FBF7FF',
-  canvas: '#F4EEFF',
-  dot: '#DCD2F5',
-  ink: '#4B3F6B',
-  sub: '#8C84A8',
-  line: '#E9E2F7',
+  ...THEMES[0].colors,
   card: '#FFFFFF',
-  primary: '#FF6FA3',
   mint: '#5CCFB0',
   butter: '#FFD66B',
   sky: '#7CB8FF',
@@ -35,6 +34,31 @@ export const C = {
   /** LINE 品牌綠（「用 LINE 登入」、「傳到 LINE」按鈕） */
   lineGreen: '#06C755',
 };
+
+let paletteVersion = 0;
+
+/** 換配色：改掉 C 的值，讓 themed() 的樣式下次取用時重算；畫面要重新掛載才會用到新顏色（ThemeProvider） */
+export function applyPalette(colors: ThemeColors) {
+  Object.assign(C, colors);
+  paletteVersion++;
+}
+
+/**
+ * 取代 StyleSheet.create：樣式裡用到 C 的顏色時，換了配色要重算。
+ * 模組載入時還不知道使用者選的配色，所以第一次取用才建立、配色換了再重建。
+ */
+export function themed<T extends StyleSheet.NamedStyles<T> | StyleSheet.NamedStyles<any>>(make: () => T & StyleSheet.NamedStyles<any>): T {
+  let cache: T | null = null;
+  let version = -1;
+  const current = () => {
+    if (!cache || version !== paletteVersion) {
+      cache = StyleSheet.create(make());
+      version = paletteVersion;
+    }
+    return cache;
+  };
+  return new Proxy({} as T, { get: (_, key) => current()[key as keyof T] });
+}
 
 /** 粉圓體只有一種粗細，搭配時不要再設 fontWeight */
 export const F = { display: FONT_DISPLAY };
@@ -166,7 +190,7 @@ export function Label({ children, style }: { children: ReactNode; style?: StyleP
 
 export { Ionicons };
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   btn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -179,8 +203,8 @@ const s = StyleSheet.create({
   btnBig: { height: 56, borderRadius: 28, paddingHorizontal: 22 },
   btnText: { fontSize: 15, fontFamily: F.display },
   btnTextBig: { fontSize: 19 },
-  seg: { flexDirection: 'row', backgroundColor: '#F1EBFB', borderRadius: 18, padding: 4, gap: 4 },
+  seg: { flexDirection: 'row', backgroundColor: C.canvas, borderRadius: 18, padding: 4, gap: 4 },
   segItem: { flex: 1, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   segText: { fontSize: 15, fontFamily: F.display, color: C.ink },
   label: { fontSize: 14, fontFamily: F.display, color: C.sub, marginTop: 18, marginBottom: 8 },
-});
+}));

@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useState, type Ref } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
@@ -11,7 +11,7 @@ import Animated, {
   ZoomIn,
 } from 'react-native-reanimated';
 
-import { C, F } from '@/components/ui';
+import { C, F, themed } from '@/components/ui';
 import { whenLabel } from '@/lib/dates';
 import { byUrgency, isAckedBy, isAnnouncement, itemTitle, type BoardItem } from '@/lib/types';
 
@@ -172,7 +172,7 @@ function FloatingHeart({ index }: { index: number }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   wrap: { position: 'absolute', left: 8, flexDirection: 'row', alignItems: 'flex-end', maxWidth: '100%' },
   petBox: { alignItems: 'center' },
   level: {
@@ -201,7 +201,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
-  bubbleAlert: { borderColor: '#FFC2D6', backgroundColor: '#FFF7FA' },
+  bubbleAlert: { borderColor: C.primary + '66', backgroundColor: C.primary + '0D' },
   tail: {
     position: 'absolute',
     left: -8,
@@ -214,7 +214,7 @@ const s = StyleSheet.create({
     borderColor: C.line,
     transform: [{ rotate: '45deg' }],
   },
-  tailAlert: { borderColor: '#FFC2D6', backgroundColor: '#FFF7FA' },
+  tailAlert: { borderColor: C.primary + '66', backgroundColor: C.primary + '0D' },
   who: { fontFamily: F.display, fontSize: 12, color: C.primary, marginBottom: 2 },
   say: { fontFamily: F.display, fontSize: 15, lineHeight: 21, color: C.ink },
-});
+}));

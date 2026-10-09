@@ -1,7 +1,7 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { C, F } from '@/components/ui';
+import { C, F, themed } from '@/components/ui';
 
 import { GroupForm } from './GroupForm';
 import { PendingJoins } from './PendingJoins';
@@ -23,9 +23,9 @@ export function SetupScreen({ initialCode }: { initialCode?: string }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   screen: { flex: 1, backgroundColor: C.bg },
   content: { padding: 24, paddingBottom: 48, width: '100%', maxWidth: 480, alignSelf: 'center' },
   title: { fontSize: 44, fontFamily: F.display, textAlign: 'center', color: C.primary },
   tagline: { fontSize: 15, fontFamily: F.display, textAlign: 'center', color: C.sub, marginTop: 2, marginBottom: 4 },
-});
+}));

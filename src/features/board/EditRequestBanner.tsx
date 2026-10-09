@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
-import { Button, C, F } from '@/components/ui';
+import { Button, C, F, themed } from '@/components/ui';
 import { notifyPerson } from '@/features/alerts/notify';
 import { approveEditRequest, removeEditRequest } from '@/lib/repo';
 import { itemTitle, type BoardItem, type EditRequest } from '@/lib/types';
@@ -64,7 +64,7 @@ export function EditRequestBanner({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -83,4 +83,4 @@ const s = StyleSheet.create({
   title: { fontSize: 16, fontFamily: F.display, color: C.ink },
   sub: { fontSize: 12, color: C.sub, marginTop: 1 },
   btn: { paddingHorizontal: 12 },
-});
+}));

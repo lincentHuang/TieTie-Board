@@ -1,25 +1,38 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
 import { RichText } from '@/components/RichText';
-import { Button, C, F, Ionicons, Label, Segmented, type IconName } from '@/components/ui';
+import { Button, C, F, type IconName, Ionicons, Label, Segmented, themed } from '@/components/ui';
 import { FilePicker } from '@/features/files/FilePicker';
 import type { PendingFiles } from '@/features/files/transfer';
 import { countdownLabel, rangeLabel } from '@/lib/dates';
 import type { PickedFile } from '@/lib/documents';
 import { hasFormatting, insertLink, safeUrl, toggleHeading, wrapSelection, type Selection } from '@/lib/rich-text';
-import { MAX_FILES, MAX_PHOTOS, NOTE_COLORS, PRIORITY_META, type BoardItem, type Priority } from '@/lib/types';
+import {
+  MAX_FILES,
+  MAX_PHOTOS,
+  MAX_TASK_TEXT,
+  MAX_TASKS,
+  NOTE_COLORS,
+  PRIORITY_META,
+  STARTER_TAGS,
+  STATUS_META,
+  tagColor,
+  type BoardItem,
+  type Priority,
+} from '@/lib/types';
 
+import { withAutoTags } from './auto-tags';
 import { ChecklistEditor } from './ChecklistEditor';
 import { applyEnd, applyWhen, parseWhen } from './parse-when';
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
 import { PhotoPicker } from './PhotoPicker';
 import { PhotoViewer } from './PhotoViewer';
-import { cleanTasks } from './todos';
+import { cleanTasks, newTask, takeLines } from './todos';
 
 export type Draft = Pick<
   BoardItem,
@@ -119,6 +132,31 @@ export function ItemEditor({
     const { dueAt: was, endAt } = draft;
     manual({ dueAt, endAt: dueAt === null || endAt === null || was === null ? null : dueAt + (endAt - was) });
   };
+  /** 進階設定（照片、檔案、顏色、字體、狀態、標籤）：平常收起來 */
+  const [advanced, setAdvanced] = useState(false);
+  /** 標籤依內容自動加；自己改過標籤之後就不再自動加 */
+  const [autoTags, setAutoTags] = useState(true);
+  const known = [...new Set([...tagSuggestions, ...STARTER_TAGS])];
+  const tagSource = (d: Pick<Draft, 'text' | 'tasks'>) => [d.text, ...d.tasks.map((t) => t.text)].join('\n');
+  const tags = autoTags
+    ? withAutoTags(draft.tags, tagSource(draft), isNew ? null : tagSource(initial), known)
+    : draft.tags;
+  const advancedSummary = [
+    draft.photos.length ? `照片 ${draft.photos.length}` : '',
+    draft.files.length ? `檔案 ${draft.files.length}` : '',
+    draft.status !== 'none' ? STATUS_META[draft.status].label : '',
+    isImage ? '狀態、標籤' : '照片、檔案、顏色、字體…',
+  ]
+    .filter(Boolean)
+    .join('・');
+  /** 從內容工具列加進來的待辦：空白的一項出現時直接可以打字 */
+  const [taskFocus, setTaskFocus] = useState<string | undefined>();
+  const addTasks = (texts: string[]) => {
+    const added = texts.slice(0, MAX_TASKS - draft.tasks.length).map((t) => newTask(t.slice(0, MAX_TASK_TEXT)));
+    if (!added.length) return;
+    set({ tasks: [...draft.tasks, ...added] });
+    if (!added[added.length - 1].text) setTaskFocus(added[added.length - 1].id);
+  };
   const endTooEarly = draft.dueAt !== null && draft.endAt !== null && draft.endAt <= draft.dueAt;
 
   const save = async () => {
@@ -130,7 +168,7 @@ export function ItemEditor({
     setBusy(true);
     if (uploads.length) setProgress(0);
     try {
-      await onSave({ ...draft, text: draft.text.trim(), tasks }, uploads, setProgress);
+      await onSave({ ...draft, text: draft.text.trim(), tasks, tags }, uploads, setProgress);
       onClose();
     } catch (e) {
       // 失敗時留在編輯畫面，剛打的內容、挑的檔案都不會不見
@@ -215,57 +253,14 @@ export function ItemEditor({
         </>
       ) : (
         <>
-          <NoteText draft={draft} autoFocus={isNew && !listFirst} listFirst={listFirst} onChange={changeText} />
+          <NoteText draft={draft} autoFocus={isNew && !listFirst} listFirst={listFirst} onChange={changeText} onAddTasks={addTasks} />
+          {/* 待辦清單算內容的一部分：緊接在內容下面編 */}
+          {draft.tasks.length || listFirst ? (
+            <ChecklistEditor tasks={draft.tasks} focusFirst={listFirst} focusId={taskFocus} onChange={(tasks) => set({ tasks })} />
+          ) : null}
           {dateFirst ? dateField : null}
-          <ChecklistEditor tasks={draft.tasks} focusFirst={listFirst} onChange={(tasks) => set({ tasks })} />
         </>
       )}
-
-      {!isImage ? (
-        <>
-          <Label>照片（選填，最多 {MAX_PHOTOS} 張）</Label>
-          <PhotoPicker value={draft.photos} onChange={(photos) => set({ photos })} />
-          {draft.photos.length > 1 ? (
-            <>
-              <View style={s.row}>
-                <Label style={s.rowLabel}>在白板上輪播照片</Label>
-                <Switch value={draft.carousel} onValueChange={(carousel) => set({ carousel })} />
-              </View>
-              <Text style={[s.hint, s.hintTight]}>
-                {draft.carousel ? '白板上從封面開始，每幾秒換下一張。' : '白板上只放封面，點照片上的 ☆ 可以換。'}
-                家人點兩下卡片就能看全部照片。
-              </Text>
-            </>
-          ) : null}
-          <Label>檔案（選填，最多 {MAX_FILES} 個）</Label>
-          <FilePicker
-            gid={gid}
-            value={draft.files}
-            pending={pending}
-            onChange={(files, next) => {
-              set({ files });
-              setPending(next);
-            }}
-          />
-          {draft.files.length ? <Text style={s.hint}>PDF 大家點一下就能直接看，其他檔案會下載下來用 Word 等 App 打開。</Text> : null}
-          <Label>便利貼顏色</Label>
-          <View style={s.colors}>
-            {NOTE_COLORS.map((c) => (
-              <Pressable
-                key={c}
-                onPress={() => set({ color: c })}
-                style={[s.swatch, { backgroundColor: c }, draft.color === c && s.swatchActive]}
-              />
-            ))}
-          </View>
-          <Label>字體大小</Label>
-          <Segmented
-            value={String(draft.fontSize)}
-            options={FONT_SIZES}
-            onChange={(v) => set({ fontSize: Number(v) })}
-          />
-        </>
-      ) : null}
 
       <Label>重要程度</Label>
       <Segmented<Priority>
@@ -285,10 +280,92 @@ export function ItemEditor({
 
       {dateFirst ? null : dateField}
 
-      <Label>狀態（當待辦事項用）</Label>
-      <StatusPicker value={draft.status} onChange={(status) => set({ status })} />
-      <Label>標籤</Label>
-      <TagPicker value={draft.tags} suggestions={tagSuggestions} onChange={(tags) => set({ tags })} />
+      {tags.length ? (
+        <Pressable onPress={() => setAdvanced(true)} accessibilityRole="button" accessibilityLabel="改標籤" style={s.autoTags}>
+          {tags.map((tag) => (
+            <View key={tag} style={[s.tagChip, { backgroundColor: tagColor(tag) + '24' }]}>
+              <Text style={[s.tagChipText, { color: tagColor(tag) }]}>#{tag}</Text>
+            </View>
+          ))}
+          <Text style={s.autoHint}>{autoTags ? '✨ 依內容自動加上' : ''}</Text>
+        </Pressable>
+      ) : null}
+
+      {/* 不常用的設定收起來，畫面才不會一長串 */}
+      <Pressable
+        onPress={() => setAdvanced((v) => !v)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: advanced }}
+        style={({ pressed }) => [s.advanced, pressed && { opacity: 0.6 }]}>
+        <Ionicons name="options" size={18} color={C.ink} />
+        <Text style={s.advancedText}>進階設定</Text>
+        <Text style={s.advancedSub} numberOfLines={1}>
+          {advanced ? '' : advancedSummary}
+        </Text>
+        <Ionicons name={advanced ? 'chevron-up' : 'chevron-down'} size={18} color={C.sub} />
+      </Pressable>
+
+      {advanced ? (
+        <>
+          {!isImage ? (
+            <>
+            <Label>照片（選填，最多 {MAX_PHOTOS} 張）</Label>
+            <PhotoPicker value={draft.photos} onChange={(photos) => set({ photos })} />
+            {draft.photos.length > 1 ? (
+              <>
+                <View style={s.row}>
+                  <Label style={s.rowLabel}>在白板上輪播照片</Label>
+                  <Switch value={draft.carousel} onValueChange={(carousel) => set({ carousel })} />
+                </View>
+                <Text style={[s.hint, s.hintTight]}>
+                  {draft.carousel ? '白板上從封面開始，每幾秒換下一張。' : '白板上只放封面，點照片上的 ☆ 可以換。'}
+                  家人點兩下卡片就能看全部照片。
+                </Text>
+              </>
+            ) : null}
+            <Label>檔案（選填，最多 {MAX_FILES} 個）</Label>
+            <FilePicker
+              gid={gid}
+              value={draft.files}
+              pending={pending}
+              onChange={(files, next) => {
+                set({ files });
+                setPending(next);
+              }}
+            />
+            {draft.files.length ? <Text style={s.hint}>PDF 大家點一下就能直接看，其他檔案會下載下來用 Word 等 App 打開。</Text> : null}
+            <Label>便利貼顏色</Label>
+            <View style={s.colors}>
+              {NOTE_COLORS.map((c) => (
+                <Pressable
+                  key={c}
+                  onPress={() => set({ color: c })}
+                  style={[s.swatch, { backgroundColor: c }, draft.color === c && s.swatchActive]}
+                />
+              ))}
+            </View>
+            <Label>字體大小</Label>
+            <Segmented
+              value={String(draft.fontSize)}
+              options={FONT_SIZES}
+              onChange={(v) => set({ fontSize: Number(v) })}
+            />
+            </>
+          ) : null}
+          <Label>狀態（當待辦事項用）</Label>
+          <StatusPicker value={draft.status} onChange={(status) => set({ status })} />
+          <Label>標籤</Label>
+          <TagPicker
+            value={tags}
+            suggestions={tagSuggestions}
+            onChange={(next) => {
+              // 自己動過標籤之後就照自己選的，不再自動加
+              setAutoTags(false);
+              set({ tags: next });
+            }}
+          />
+        </>
+      ) : null}
     </Sheet>
   );
 }
@@ -299,12 +376,15 @@ function NoteText({
   autoFocus,
   listFirst,
   onChange,
+  onAddTasks,
 }: {
   draft: Draft;
   autoFocus: boolean;
   /** 待辦清單：這格只是清單名稱，矮一點 */
   listFirst: boolean;
   onChange: (text: string) => void;
+  /** 「待辦」按鈕：選到的幾行搬去待辦清單（沒選字就加一項空白的） */
+  onAddTasks: (texts: string[]) => void;
 }) {
   const text = draft.text;
   const [rawSel, setSel] = useState<Selection>({ start: text.length, end: text.length });
@@ -331,6 +411,13 @@ function NoteText({
     setLinking(false);
   };
   const picked = sel.end > sel.start;
+  const toTodo = () => {
+    if (!picked) return onAddTasks(['']);
+    const r = takeLines(text, sel);
+    if (!r.lines.length) return onAddTasks(['']);
+    apply(r);
+    onAddTasks(r.lines);
+  };
 
   return (
     <>
@@ -341,6 +428,7 @@ function NoteText({
           <Tool icon="text" label="標題" onPress={() => apply(toggleHeading(text, sel))} />
           <Tool icon="color-wand" label="重點" onPress={() => apply(wrapSelection(text, sel, '**', '**', '重點'))} />
           <Tool icon="link" label="連結" active={linking} onPress={() => setLinking((v) => !v)} />
+          <Tool icon="checkbox-outline" label="待辦" onPress={toTodo} />
         </View>
       )}
       {linking ? (
@@ -381,7 +469,7 @@ function NoteText({
           ? picked
             ? '選到的字會變成連結，大家點一下就打開網址。'
             : '沒選字的話直接放網址；先選字再按「加入」，那幾個字就會變成連結。'
-          : '先選字再按按鈕。標題會顯示在桌面小工具和通知上；沒設標題就用第一行。直接貼的網址也點得開。'}
+          : '先選字再按按鈕。標題會顯示在桌面小工具和通知上；沒設標題就用第一行。選幾行按「待辦」就變成可以打勾的待辦。'}
       </Text>
       {hasFormatting(text) ? (
         <>
@@ -421,8 +509,8 @@ function Preview({ uri }: { uri: string }) {
   );
 }
 
-const s = StyleSheet.create({
-  preview: { width: '100%', height: 200, borderRadius: 18, backgroundColor: '#F4EEFF', marginTop: 4 },
+const s = themed(() => ({
+  preview: { width: '100%', height: 200, borderRadius: 18, backgroundColor: C.canvas, marginTop: 4 },
   input: {
     borderWidth: 2,
     borderColor: C.line,
@@ -460,4 +548,22 @@ const s = StyleSheet.create({
   // 標題的上下間距移到整排上，開關才會跟文字置中對齊
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 18, marginBottom: 8 },
   rowLabel: { marginTop: 0, marginBottom: 0, flexShrink: 1 },
-});
+  autoTags: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 14 },
+  tagChip: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3 },
+  tagChipText: { fontSize: 13, fontFamily: F.display },
+  autoHint: { fontSize: 12, fontFamily: F.display, color: C.sub },
+  advanced: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: C.line,
+    backgroundColor: C.card,
+  },
+  advancedText: { fontSize: 16, fontFamily: F.display, color: C.ink },
+  advancedSub: { flex: 1, textAlign: 'right', fontSize: 13, fontFamily: F.display, color: C.sub },
+}));

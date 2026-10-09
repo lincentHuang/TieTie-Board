@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
-import { C, F, Ionicons, Squishy } from '@/components/ui';
+import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
 import { pickDocuments } from '@/lib/documents';
 import { MAX_FILE_BYTES, MAX_FILES, fileSizeLabel, type Attachment } from '@/lib/types';
 
@@ -74,7 +74,7 @@ export function FilePicker({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   list: { gap: 8 },
   add: {
     flexDirection: 'row',
@@ -89,4 +89,4 @@ const s = StyleSheet.create({
     backgroundColor: C.lavender + '14',
   },
   addText: { fontSize: 14, fontFamily: F.display, color: C.lavender },
-});
+}));

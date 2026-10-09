@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { StyleSheet, Text, TextInput } from 'react-native';
+import { Text, TextInput } from 'react-native';
 
-import { Button, C, F, Label, Segmented } from '@/components/ui';
+import { Button, C, F, Label, Segmented, themed } from '@/components/ui';
 import { canLoginWithGoogle } from '@/lib/firebase';
 import { errorMessage } from '@/lib/errors';
 import { joinBoard } from '@/lib/join';
@@ -134,7 +134,7 @@ export function GroupForm({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   input: {
     backgroundColor: '#FFF',
     borderWidth: 2,
@@ -150,4 +150,4 @@ const s = StyleSheet.create({
   hint: { color: C.sub, marginTop: 8, fontSize: 13, textAlign: 'center' },
   error: { color: C.urgent, marginTop: 12, fontSize: 15, fontFamily: F.display },
   notice: { color: C.ok, marginTop: 12, fontSize: 15, fontFamily: F.display },
-});
+}));

@@ -1,11 +1,11 @@
 import * as Clipboard from 'expo-clipboard';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Label } from '@/components/ui';
+import { Button, C, F, Label, themed } from '@/components/ui';
 import { canShareToLine, shareToLine } from '@/lib/liff';
 import { lineInviteLink } from '@/lib/line';
 import { approveJoinRequest, removeJoinRequest } from '@/lib/repo';
@@ -146,7 +146,7 @@ function RequestList({ code, requests }: { code: string; requests: JoinRequest[]
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   card: {
     width: 108,
@@ -159,7 +159,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 6,
     gap: 2,
   },
-  cardMe: { borderColor: '#FFC2D6', backgroundColor: '#FFF7FA' },
+  cardMe: { borderColor: C.primary + '66', backgroundColor: C.primary + '0D' },
   name: { fontFamily: F.display, fontSize: 15, color: C.ink, marginTop: 4 },
   status: { fontSize: 11, color: C.ok, marginTop: 3 },
   owner: { fontSize: 11, color: C.primary, fontFamily: F.display },
@@ -177,7 +177,7 @@ const s = StyleSheet.create({
     paddingRight: 8,
   },
   requestName: { flex: 1, fontFamily: F.display, fontSize: 17, color: C.ink },
-  codeBox: { backgroundColor: '#F4EEFF', borderRadius: 20, padding: 14, alignItems: 'center' },
+  codeBox: { backgroundColor: C.canvas, borderRadius: 20, padding: 14, alignItems: 'center' },
   code: { fontFamily: F.display, fontSize: 40, letterSpacing: 8, color: C.ink },
   hint: { fontSize: 13, color: C.sub, marginTop: 4, textAlign: 'center' },
-});
+}));

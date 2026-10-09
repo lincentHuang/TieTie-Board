@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { colorOf, type Member } from '@/lib/types';
 
-import { C, F } from './ui';
+import { C, F, themed } from './ui';
 
 /**
  * 成員頭像：有 LINE 大頭貼就放照片，沒有（或載入失敗）就是名字的第一個字，每個人固定一個顏色；
@@ -33,7 +33,7 @@ export function MemberAvatar({ member, size = 36, dot = false }: { member: Membe
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   circle: { alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF' },
   initial: { fontFamily: F.display, color: '#FFF' },
   dot: {
@@ -47,4 +47,4 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFF',
   },
-});
+}));

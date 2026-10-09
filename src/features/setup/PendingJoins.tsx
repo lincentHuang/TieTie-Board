@@ -1,7 +1,7 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
-import { Button, C, F, Ionicons } from '@/components/ui';
+import { Button, C, F, Ionicons, themed } from '@/components/ui';
 import { removeJoinRequest } from '@/lib/repo';
 import { useSession } from '@/lib/session';
 
@@ -37,7 +37,7 @@ export function PendingJoins() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   list: { gap: 8, marginTop: 16 },
   row: {
     flexDirection: 'row',
@@ -53,4 +53,4 @@ const s = StyleSheet.create({
   },
   name: { fontFamily: F.display, fontSize: 17, color: C.ink },
   hint: { fontSize: 12, color: C.sub, marginTop: 2 },
-});
+}));

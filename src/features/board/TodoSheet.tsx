@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { Sheet } from '@/components/Sheet';
-import { C, F, Ionicons, Label } from '@/components/ui';
+import { C, F, Ionicons, Label, themed } from '@/components/ui';
 import { STATUS_META, isTaskDone, itemTitle, taskProgress, type BoardItem, type Member } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
 
@@ -121,7 +121,7 @@ export function TodoSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   summary: { fontSize: 14, fontFamily: F.display, color: C.sub, marginBottom: 10 },
   allDone: { alignItems: 'center', gap: 6, paddingVertical: 18 },
   allDoneText: { fontSize: 18, fontFamily: F.display, color: C.ink },
@@ -142,4 +142,4 @@ const s = StyleSheet.create({
   single: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   chip: { borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2 },
   chipText: { fontSize: 12, fontFamily: F.display, color: '#FFF' },
-});
+}));

@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Switch, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
-import { Button, C, F, Ionicons, type IconName } from '@/components/ui';
+import { Button, C, F, type IconName, Ionicons, themed } from '@/components/ui';
 import { useSession } from '@/lib/session';
 
 import { APK_URL, canOpenInApp, downloadApk, openInApp, openInBrowser } from './install';
@@ -207,7 +207,7 @@ function Steps({ steps }: { steps: { icon: IconName; text: string }[] }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   list: { gap: 10 },
   option: { backgroundColor: '#FFF', borderRadius: 20, borderWidth: 2, borderColor: C.line, padding: 14 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -230,4 +230,4 @@ const s = StyleSheet.create({
   done: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   doneText: { fontFamily: F.display, fontSize: 16, color: C.ink },
   url: { fontFamily: F.display, fontSize: 18, color: C.primary, textAlign: 'center', letterSpacing: 0.5 },
-});
+}));

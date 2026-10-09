@@ -1,9 +1,9 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Ionicons, Label } from '@/components/ui';
+import { Button, C, F, Ionicons, Label, themed } from '@/components/ui';
 import { FileRow } from '@/features/files/FileRow';
 import { countdownLabel, timeAgo, whenLabel } from '@/lib/dates';
 import { PRIORITY_META, isAckedBy, isAnnouncement, itemTitle, type BoardItem, type Member } from '@/lib/types';
@@ -126,7 +126,7 @@ export function AnnouncementsSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   empty: { color: C.sub, fontSize: 15, paddingVertical: 4 },
   allDone: {
     flexDirection: 'row',
@@ -157,7 +157,7 @@ const s = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
     borderBottomWidth: 2,
-    borderBottomColor: '#F4EEFF',
+    borderBottomColor: C.canvas,
   },
   dateBox: { width: 124 },
   dateText: { fontSize: 15, fontFamily: F.display, color: C.ink },
@@ -167,4 +167,4 @@ const s = StyleSheet.create({
   unreadList: { flexDirection: 'row', gap: 4 },
   unreadMember: { alignItems: 'center', width: 40 },
   unreadName: { fontSize: 10, color: C.urgent },
-});
+}));

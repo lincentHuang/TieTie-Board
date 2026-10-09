@@ -1,10 +1,10 @@
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Text, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, type SharedValue } from 'react-native-reanimated';
 
 import { RichText } from '@/components/RichText';
-import { C, F, Ionicons } from '@/components/ui';
+import { C, F, Ionicons, themed } from '@/components/ui';
 import { fileKind } from '@/features/files/file-kinds';
 import { countdownLabel, rangeLabel } from '@/lib/dates';
 import { plainText } from '@/lib/rich-text';
@@ -17,6 +17,7 @@ import {
   taskProgress,
   type Attachment,
   type BoardItem,
+  type Task,
 } from '@/lib/types';
 
 import { CardTasks } from './Checklist';
@@ -43,6 +44,8 @@ export function ItemBody({
   tidy = false,
   w,
   h,
+  wrapTask,
+  onFit,
 }: {
   item: BoardItem;
   now: number;
@@ -53,7 +56,18 @@ export function ItemBody({
   tidy?: boolean;
   w: SharedValue<number>;
   h: SharedValue<number>;
+  /** 待辦清單的每一項要不要包成可以點的（給 CardTasks） */
+  wrapTask?: (task: Task, done: boolean, row: ReactNode) => ReactNode;
+  /** 排隊時要精簡空間：回報卡片剛好裝下內容要多高（只有文字、待辦的便利貼才回報） */
+  onFit?: (height: number) => void;
 }) {
+  // 內文區分到多高、內文實際排出來多高：卡片高度扣掉多的（或補上不夠的）就是剛好的高度
+  const fitBox = useRef({ body: 0, text: 0 });
+  const measure = (part: 'body' | 'text', value: number) => {
+    const box = fitBox.current;
+    box[part] = value;
+    if (onFit && box.body && box.text) onFit(Math.ceil(h.get() - box.body + box.text));
+  };
   const stickerStyle = useAnimatedStyle(() => ({
     fontSize: Math.min(w.get(), h.get()) * 0.78,
     lineHeight: Math.min(w.get(), h.get()) * 0.95,
@@ -154,6 +168,11 @@ export function ItemBody({
     );
   }
 
+  // 有照片、只放檔案（大圖示）的卡片照原本大小，不精簡
+  const fits = onFit && !item.photos.length && !(item.files.length && !item.text);
+  const bodyLayout = fits ? (e: LayoutChangeEvent) => measure('body', e.nativeEvent.layout.height) : undefined;
+  const textLayout = fits ? (e: LayoutChangeEvent) => measure('text', e.nativeEvent.layout.height) : undefined;
+
   return (
     <View style={[s.fill, { transform: [{ rotate: `${tilt}deg` }] }]}>
       <View style={[s.fill, s.note, { backgroundColor: item.color }, announce && { borderColor: meta.color }]}>
@@ -162,17 +181,19 @@ export function ItemBody({
             所以文字用絕對定位照自己的高度排版，多出來的由外框裁掉 */}
         {item.tasks.length ? (
           // 有待辦清單：文字（清單名稱）和清單一起照自己的高度往下排，放不下的一樣由外框裁掉
-          <View style={s.noteBody}>
-            <View style={s.noteFlow}>
+          <View style={s.noteBody} onLayout={bodyLayout}>
+            <View style={s.noteFlow} onLayout={textLayout}>
               {item.text ? (
                 <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.flowText, done && s.doneText]} />
               ) : null}
-              <CardTasks item={item} fontSize={item.fontSize} />
+              <CardTasks item={item} fontSize={item.fontSize} wrapTask={wrapTask} />
             </View>
           </View>
         ) : item.text || (!item.photos.length && !item.files.length) ? (
-          <View style={s.noteBody}>
-            <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.noteText, done && s.doneText]} />
+          <View style={s.noteBody} onLayout={bodyLayout}>
+            <View style={s.noteFlow} onLayout={textLayout}>
+              <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.flowText, done && s.doneText]} />
+            </View>
           </View>
         ) : null}
         {item.photos.length ? <CardPhotos photos={item.photos} carousel={item.carousel} /> : null}
@@ -284,14 +305,13 @@ const shadow = {
   elevation: 5,
 };
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   fill: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   sticker: { textAlign: 'center', textShadowColor: '#6B4FA833', textShadowRadius: 8, textShadowOffset: { width: 0, height: 4 } },
   // 白邊貼紙
   note: { borderRadius: 18, borderWidth: 5, borderColor: '#FFFFFF', overflow: 'hidden', ...shadow },
   noteBody: { flex: 1, overflow: 'hidden' },
-  noteText: { position: 'absolute', top: 0, left: 0, right: 0, padding: 12, color: C.ink, fontFamily: F.display },
   noteFlow: { position: 'absolute', top: 0, left: 0, right: 0, padding: 12, gap: 6 },
   flowText: { color: C.ink, fontFamily: F.display },
   // 有文字時照片佔多一點點，照片才看得清楚
@@ -385,4 +405,4 @@ const s = StyleSheet.create({
     transform: [{ rotate: '-14deg' }],
   },
   stampText: { fontSize: 16, fontFamily: F.display, color: C.ok },
-});
+}));

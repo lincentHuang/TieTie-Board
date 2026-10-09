@@ -1,6 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
-import { Button, C, F } from '@/components/ui';
+import { Button, C, F, themed } from '@/components/ui';
 
 /** 已經交給 Android App 了：LINE 裡留著這個畫面，App 沒打開的話可以在這裡繼續 */
 export function AppHandoff({ onStay, onStopAuto }: { onStay: () => void; onStopAuto: () => void }) {
@@ -17,10 +17,10 @@ export function AppHandoff({ onStay, onStopAuto }: { onStay: () => void; onStopA
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 24 },
   emoji: { fontSize: 64 },
   title: { fontSize: 22, fontFamily: F.display, color: C.ink, marginTop: 8 },
   text: { fontSize: 15, color: C.sub, marginTop: 8, textAlign: 'center', lineHeight: 22, maxWidth: 360 },
   actions: { width: '100%', maxWidth: 360, marginTop: 24, gap: 10 },
-});
+}));

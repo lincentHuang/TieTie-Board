@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { C, F, Label } from '@/components/ui';
+import { C, F, Label, themed } from '@/components/ui';
 
 import { PetAvatar } from './PetAvatar';
 import { ACCESSORIES, FUR_COLORS, SPECIES, type PetConfig, type Species } from './pet-types';
@@ -88,13 +88,13 @@ export function PetEditor({ value, onChange }: { value: PetConfig; onChange: (pe
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   stage: {
     alignItems: 'center',
     paddingTop: 12,
     paddingBottom: 10,
     borderRadius: 28,
-    backgroundColor: '#FFF0F6',
+    backgroundColor: C.primary + '14',
     borderWidth: 2,
     borderColor: '#FFE0EC',
     borderStyle: 'dashed',
@@ -111,7 +111,7 @@ const s = StyleSheet.create({
     backgroundColor: '#FFF',
     minWidth: 56,
   },
-  chipActive: { borderColor: C.primary, backgroundColor: '#FFF0F6' },
+  chipActive: { borderColor: C.primary, backgroundColor: C.primary + '14' },
   chipText: { fontFamily: F.display, fontSize: 13, color: C.ink, marginTop: 2 },
   swatch: { width: 38, height: 38, borderRadius: 19, borderWidth: 2, borderColor: C.line },
   swatchActive: { borderWidth: 4, borderColor: C.primary },
@@ -129,4 +129,4 @@ const s = StyleSheet.create({
     fontFamily: F.display,
     color: C.ink,
   },
-});
+}));

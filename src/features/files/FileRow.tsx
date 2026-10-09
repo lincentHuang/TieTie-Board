@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
-import { C, F, Ionicons } from '@/components/ui';
+import { C, F, Ionicons, themed } from '@/components/ui';
 import { OPEN_EXTERNALLY_LABEL, openExternally } from '@/lib/files';
 import { fileSizeLabel, isPdf, type Attachment } from '@/lib/types';
 
@@ -84,7 +84,7 @@ export function FileRow({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -100,5 +100,5 @@ const s = StyleSheet.create({
   info: { flex: 1, gap: 2 },
   name: { fontSize: 15, fontFamily: F.display, color: C.ink },
   meta: { fontSize: 12, fontFamily: F.display, color: C.sub },
-  remove: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#F4EEFF', alignItems: 'center', justifyContent: 'center' },
-});
+  remove: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.canvas, alignItems: 'center', justifyContent: 'center' },
+}));

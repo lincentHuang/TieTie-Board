@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
-import { C, F, Ionicons, Squishy } from '@/components/ui';
+import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
 import { itemTitle } from '@/lib/types';
 
 import type { TodoEntry } from './todos';
@@ -68,7 +68,7 @@ export function TodoPill({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   pill: {
     height: 32,
     borderRadius: 16,
@@ -102,4 +102,4 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   countText: { color: '#FFF', fontSize: 12, fontFamily: F.display },
-});
+}));

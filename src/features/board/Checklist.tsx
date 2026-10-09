@@ -1,19 +1,36 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import type { ReactNode } from 'react';
+import { Pressable, Text, View } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
 
-import { C, F, Ionicons } from '@/components/ui';
-import { isTaskDone, type BoardItem } from '@/lib/types';
+import { C, F, Ionicons, themed } from '@/components/ui';
+import { isTaskDone, type BoardItem, type Task } from '@/lib/types';
 
 import { orderedTasks } from './todos';
 
-/** 白板卡片上的待辦清單：只是看（卡片要能拖），打勾要點兩下打開、或從上面的待辦小膠囊勾 */
-export function CardTasks({ item, fontSize }: { item: BoardItem; fontSize: number }) {
-  const size = Math.max(14, Math.min(24, Math.round(fontSize * 0.8)));
+/** 卡片上一項待辦的字有多大（跟著卡片字體） */
+export const cardTaskSize = (fontSize: number) => Math.max(14, Math.min(24, Math.round(fontSize * 0.8)));
+/** 卡片上一項待辦（一行字時）有多高 */
+export const cardTaskRowH = (fontSize: number) => Math.round(cardTaskSize(fontSize) * 1.3);
+
+/**
+ * 白板卡片上的待辦清單。平常只是看（卡片要能拖），打勾要點兩下打開、或從上面的待辦小膠囊勾；
+ * 外面給了 wrapTask 就把每一項包起來（排隊模式、白板放大時可以直接點一項打勾）
+ */
+export function CardTasks({
+  item,
+  fontSize,
+  wrapTask,
+}: {
+  item: BoardItem;
+  fontSize: number;
+  wrapTask?: (task: Task, done: boolean, row: ReactNode) => ReactNode;
+}) {
+  const size = cardTaskSize(fontSize);
   return (
-    <View pointerEvents="none" style={s.cardList}>
+    <View pointerEvents={wrapTask ? 'box-none' : 'none'} style={s.cardList}>
       {orderedTasks(item).map((t) => {
         const done = isTaskDone(item, t.id);
-        return (
+        const row = (
           <View key={t.id} style={s.cardRow}>
             <Ionicons
               name={done ? 'checkmark-circle' : 'ellipse-outline'}
@@ -26,6 +43,7 @@ export function CardTasks({ item, fontSize }: { item: BoardItem; fontSize: numbe
             </Text>
           </View>
         );
+        return wrapTask ? <View key={t.id}>{wrapTask(t, done, row)}</View> : row;
       })}
     </View>
   );
@@ -69,7 +87,7 @@ export function TaskRow({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   cardList: { gap: 4, marginTop: 2 },
   cardRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   cardText: { flex: 1, color: C.ink, fontFamily: F.display },
@@ -89,4 +107,4 @@ const s = StyleSheet.create({
   boxOn: { backgroundColor: C.ok, borderColor: C.ok },
   text: { flex: 1, fontSize: 17, lineHeight: 23, fontFamily: F.display, color: C.ink },
   by: { maxWidth: 90, fontSize: 12, fontFamily: F.display, color: C.sub },
-});
+}));

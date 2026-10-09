@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Ionicons, Label } from '@/components/ui';
+import { Button, C, F, Ionicons, Label, themed } from '@/components/ui';
 import { rangeLabel, startOfDay, timeOfDay } from '@/lib/dates';
 import { PRIORITY_META, isAckedBy, isAnnouncement, itemTitle, type BoardItem } from '@/lib/types';
 import { useNow } from '@/lib/use-now';
@@ -12,18 +12,21 @@ import { itemsByDay, monthGrid, type DayKey } from './calendar';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
-/** 行事曆：月曆上有事的日子有小圓點，點一天只列出那天的公告與行程 */
+/** 行事曆：月曆上有事的日子有小圓點，點一天只列出那天的公告與行程，下面可以直接在那天新增公告 */
 export function CalendarSheet({
   items,
   uid,
   onAck,
   onLocate,
+  onAdd,
   onClose,
 }: {
   items: BoardItem[];
   uid: string;
   onAck: (item: BoardItem) => void;
   onLocate: (item: BoardItem) => void;
+  /** 在選的那天新增公告（day = 那天 0 點） */
+  onAdd: (day: number) => void;
   onClose: () => void;
 }) {
   const now = useNow();
@@ -50,7 +53,20 @@ export function CalendarSheet({
   };
 
   return (
-    <Sheet visible title="行事曆" onClose={onClose}>
+    <Sheet
+      visible
+      fill
+      title="行事曆"
+      onClose={onClose}
+      footer={
+        <View style={{ flex: 1 }}>
+          <Button
+            icon="add"
+            label={`在 ${pickedDate.getMonth() + 1}/${pickedDate.getDate()}（${WEEKDAYS[pickedDate.getDay()]}）新增公告`}
+            onPress={() => onAdd(picked)}
+          />
+        </View>
+      }>
       <View style={s.monthBar}>
         <Pressable onPress={() => shift(-1)} hitSlop={10} style={s.arrow} accessibilityLabel="上個月">
           <Ionicons name="chevron-back" size={22} color={C.ink} />
@@ -137,9 +153,9 @@ export function CalendarSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   monthBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  arrow: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F4EEFF' },
+  arrow: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: C.canvas },
   monthText: { flex: 1, textAlign: 'center', fontFamily: F.display, fontSize: 19, color: C.ink },
   todayBtn: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: C.primary + '22' },
   todayText: { fontFamily: F.display, fontSize: 14, color: C.primary },
@@ -158,4 +174,4 @@ const s = StyleSheet.create({
   time: { fontFamily: F.display, fontSize: 15 },
   author: { flex: 1, textAlign: 'right', fontSize: 13, color: C.sub },
   title: { fontSize: 17, lineHeight: 24, fontFamily: F.display, color: C.ink },
-});
+}));

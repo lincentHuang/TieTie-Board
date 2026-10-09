@@ -3,7 +3,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { showError } from '@/components/dialogs';
-import { Button, C, F, Ionicons } from '@/components/ui';
+import { Button, C, F, Ionicons, themed } from '@/components/ui';
 import { OPEN_EXTERNALLY_LABEL, openExternally } from '@/lib/files';
 import type { Attachment } from '@/lib/types';
 
@@ -69,7 +69,7 @@ export function PdfViewer({ file, bytes, onClose }: { file: Attachment; bytes: U
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   screen: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
@@ -81,7 +81,7 @@ const s = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: C.line,
   },
-  iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#F4EEFF', alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.canvas, alignItems: 'center', justifyContent: 'center' },
   titleBox: { flex: 1, alignItems: 'center' },
   title: { fontSize: 17, fontFamily: F.display, color: C.ink },
   sub: { fontSize: 12, fontFamily: F.display, color: C.sub, marginTop: 1 },
@@ -95,4 +95,4 @@ const s = StyleSheet.create({
     backgroundColor: '#ECE6F6E6',
   },
   overlayText: { fontSize: 16, fontFamily: F.display, color: C.ink, textAlign: 'center', lineHeight: 24 },
-});
+}));

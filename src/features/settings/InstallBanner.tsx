@@ -1,6 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
-import { C, F, Ionicons, Squishy } from '@/components/ui';
+import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
 
 import { APK_URL, canOpenInApp } from './install';
 import { hideInstallHint, useInstall, useInstallHint } from './useInstall';
@@ -42,7 +42,7 @@ export function InstallBanner({ bottom, onOpen }: { bottom: number; onOpen: () =
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   wrap: { position: 'absolute', left: 12, right: 12, alignItems: 'center' },
   inner: { width: '100%', maxWidth: 480 },
   card: {
@@ -52,7 +52,7 @@ const s = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 22,
     borderWidth: 2,
-    borderColor: '#FFC2D6',
+    borderColor: C.primary + '66',
     paddingLeft: 14,
     paddingRight: 8,
     paddingVertical: 8,
@@ -80,4 +80,4 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
-import { C, F, Ionicons, Squishy } from '@/components/ui';
+import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
 import { photosTooBig, pickPhotos } from '@/lib/images';
 import { MAX_PHOTOS } from '@/lib/types';
 
@@ -84,7 +84,7 @@ export function PhotoPicker({ value, onChange }: { value: string[]; onChange: (p
 
 const TILE = 76;
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   tile: { width: TILE, height: TILE, borderRadius: 16 },
   photo: { width: TILE, height: TILE, borderRadius: 16, backgroundColor: C.canvas },
@@ -134,4 +134,4 @@ const s = StyleSheet.create({
     backgroundColor: C.sky + '14',
   },
   addText: { fontSize: 12, fontFamily: F.display, color: C.sky },
-});
+}));

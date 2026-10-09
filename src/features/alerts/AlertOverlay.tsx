@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -11,7 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { showError } from '@/components/dialogs';
-import { C, F, Ionicons, Squishy } from '@/components/ui';
+import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
 import { timeAgo } from '@/lib/dates';
 import { ackAlert } from '@/lib/repo';
 import { isAlertActive, isAlertForMe, type BoardDigest, type QuickAlert } from '@/lib/types';
@@ -170,7 +170,7 @@ function IncomingCard({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -210,9 +210,9 @@ const s = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#FFF',
     borderWidth: 2,
-    borderColor: '#FFC2D6',
+    borderColor: C.primary + '66',
   },
   mineText: { flexShrink: 1, fontFamily: F.display, fontSize: 14, color: C.ink },
   recall: { minWidth: 48, height: 26, borderRadius: 13, paddingHorizontal: 10, backgroundColor: '#FFE8EB', alignItems: 'center', justifyContent: 'center' },
   recallText: { fontFamily: F.display, fontSize: 13, color: C.urgent },
-});
+}));

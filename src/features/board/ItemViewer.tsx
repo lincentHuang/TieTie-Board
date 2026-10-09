@@ -1,16 +1,15 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { RichText } from '@/components/RichText';
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Ionicons, Label } from '@/components/ui';
+import { Button, C, F, Ionicons, Label, themed } from '@/components/ui';
 import { FileRow } from '@/features/files/FileRow';
 import { countdownLabel, rangeLabel, timeAgo } from '@/lib/dates';
 import {
   PRIORITY_META,
-  STATUS_META,
   isAckedBy,
   isAnnouncement,
   isTaskDone,
@@ -18,11 +17,13 @@ import {
   taskProgress,
   viewablePhotos,
   type BoardItem,
+  type ItemStatus,
   type Member,
   type Task,
 } from '@/lib/types';
 
 import { TaskRow } from './Checklist';
+import { StatusPicker } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { checkerName } from './todos';
 
@@ -31,7 +32,8 @@ export type EditAccess = 'edit' | 'ask' | 'waiting';
 
 /**
  * 檢視模式（點兩下卡片）：完整的內容、照片、附件、誰看過了。
- * 只是看，不會不小心改到；要改的話按下面的「編輯」（作者本人也一樣）
+ * 內容只是看，不會不小心改到；要改的話按下面的「編輯」（作者本人也一樣）。
+ * 狀態、待辦打勾大家都可以直接在這裡改
  */
 export function ItemViewer({
   gid,
@@ -42,6 +44,7 @@ export function ItemViewer({
   access,
   onAck,
   onToggleTask,
+  onStatus,
   onEdit,
   onClose,
 }: {
@@ -54,6 +57,8 @@ export function ItemViewer({
   onAck: () => void;
   /** 待辦打勾 / 取消（大家都可以） */
   onToggleTask: (task: Task, done: boolean) => void;
+  /** 改狀態（大家都可以，跟「整理」一樣） */
+  onStatus: (status: ItemStatus) => void;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -165,15 +170,11 @@ export function ItemViewer({
         </>
       ) : null}
 
-      {item.status !== 'none' || item.tags.length ? (
+      <Label>狀態</Label>
+      <StatusPicker value={item.status} onChange={onStatus} />
+
+      {item.tags.length ? (
         <View style={s.pills}>
-          {item.status !== 'none' ? (
-            <View style={[s.pill, { backgroundColor: STATUS_META[item.status].color }]}>
-              <Text style={[s.pillText, { color: '#FFF' }]}>
-                {STATUS_META[item.status].icon} {STATUS_META[item.status].label}
-              </Text>
-            </View>
-          ) : null}
           {item.tags.map((tag) => (
             <View key={tag} style={[s.pill, { backgroundColor: tagColor(tag) + '24' }]}>
               <Text style={[s.pillText, { color: tagColor(tag) }]}>#{tag}</Text>
@@ -210,17 +211,17 @@ export function ItemViewer({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   byline: { fontSize: 13, fontFamily: F.display, color: C.sub, marginBottom: 10 },
   when: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
   whenText: { fontSize: 17, fontFamily: F.display, color: C.ink },
   whenSub: { marginLeft: 'auto', fontSize: 13, fontFamily: F.display, color: C.sub },
-  bigPhoto: { width: '100%', height: 280, borderRadius: 18, backgroundColor: '#F4EEFF', marginBottom: 10 },
-  paper: { backgroundColor: '#F7F2FF', borderRadius: 18, padding: 14, borderWidth: 2, borderColor: '#0000000A' },
+  bigPhoto: { width: '100%', height: 280, borderRadius: 18, backgroundColor: C.canvas, marginBottom: 10 },
+  paper: { backgroundColor: C.bg, borderRadius: 18, padding: 14, borderWidth: 2, borderColor: '#0000000A' },
   text: { fontFamily: F.display, color: C.ink },
   doneText: { opacity: 0.55, textDecorationLine: 'line-through' },
   thumbs: { gap: 8 },
-  thumb: { width: 110, height: 110, borderRadius: 14, backgroundColor: '#F4EEFF' },
+  thumb: { width: 110, height: 110, borderRadius: 14, backgroundColor: C.canvas },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
   pill: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 3 },
   pillText: { fontSize: 13, fontFamily: F.display },
@@ -229,4 +230,4 @@ const s = StyleSheet.create({
   unreadMember: { alignItems: 'center', width: 44 },
   unreadName: { fontSize: 11, color: C.urgent, fontFamily: F.display },
   unreadHint: { fontSize: 12, color: C.sub, fontFamily: F.display },
-});
+}));

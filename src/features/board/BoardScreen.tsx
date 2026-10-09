@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { askConfirm, showError, showNotice } from '@/components/dialogs';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { C, F, Ionicons, Squishy, type IconName } from '@/components/ui';
+import { takeReopenSettings } from '@/components/ThemeProvider';
+import { C, F, type IconName, Ionicons, Squishy, themed } from '@/components/ui';
 import { AlertOverlay } from '@/features/alerts/AlertOverlay';
 import { notifyBoardChange, notifyPerson } from '@/features/alerts/notify';
 import { QuickAlertSheet } from '@/features/alerts/QuickAlertSheet';
@@ -16,7 +17,7 @@ import { SettingsSheet } from '@/features/settings/SettingsSheet';
 import { AccountCard } from '@/features/setup/AccountCard';
 import { BoardSwitcherSheet } from '@/features/setup/BoardSwitcherSheet';
 import { useWidgetSync } from '@/features/widgets/useWidgetSync';
-import { countdownLabel, whenLabel } from '@/lib/dates';
+import { countdownLabel, startOfDay, whenLabel } from '@/lib/dates';
 import { pickImage } from '@/lib/images';
 import {
   acknowledge,
@@ -43,6 +44,7 @@ import {
   isAckedBy,
   isAlertActive,
   isAnnouncement,
+  isTaskDone,
   itemTitle,
   NOTE_COLORS,
   sameFileSet,
@@ -66,7 +68,6 @@ import { ItemViewer } from './ItemViewer';
 import { OrganizeManySheet, OrganizeSheet } from './Organize';
 import { PhotoViewer } from './PhotoViewer';
 import { StickerPicker } from './StickerPicker';
-import { SwipeBoard } from './SwipeBoard';
 import { TodoPill } from './TodoPill';
 import { TodoSheet } from './TodoSheet';
 import { newTask, openTodos, sameTasks, type TodoEntry } from './todos';
@@ -119,15 +120,15 @@ export function BoardScreen({
 
   const sel = useSelection();
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [panel, setPanel] = useState<Panel>('none');
+  const [panel, setPanel] = useState<Panel>(() => (takeReopenSettings() ? 'settings' : 'none'));
   const [organizingIds, setOrganizingIds] = useState<string[] | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   /** 點兩下打開的檢視模式 */
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [filesId, setFilesId] = useState<string | null>(null);
-  const { prefs, setMode, setGroup } = useViewPrefs();
+  const { mode, setMode } = useViewPrefs();
 
-  if (!items || !prefs) {
+  if (!items || !mode) {
     return (
       <View style={[s.screen, s.center]}>
         <ActivityIndicator size="large" color={C.primary} />
@@ -136,7 +137,6 @@ export function BoardScreen({
     );
   }
 
-  const { mode } = prefs;
   const queued = mode === 'queue';
   const free = mode === 'free';
   // 被別人刪掉的項目自動不算在選取裡
@@ -175,6 +175,12 @@ export function BoardScreen({
   /** 待辦打勾 / 取消：清單裡的一項記是誰勾的；狀態是待辦的便利貼就把狀態改成完成（取消的話改回待辦） */
   const toggleTask = (item: BoardItem, task: Task, done: boolean) =>
     checkTask(gid, item.id, task.id, done ? uid : null).catch((e) => showError('打勾失敗', e));
+  /** 在卡片上直接點一項（排隊時、白板放大時）：勾了就取消，沒勾就打勾 */
+  const flipTask = (id: string, taskId: string) => {
+    const item = items.find((i) => i.id === id);
+    const task = item?.tasks.find((t) => t.id === taskId);
+    if (item && task) toggleTask(item, task, !isTaskDone(item, taskId));
+  };
   const tick = (entry: TodoEntry, done: boolean) => {
     if (entry.task) return toggleTask(entry.item, entry.task, done);
     organizeItem(gid, entry.item.id, { status: done ? 'done' : 'todo' }).catch((e) => showError('打勾失敗', e));
@@ -183,7 +189,7 @@ export function BoardScreen({
   /** 公告 / 活動有變化時，讓其他人的桌面小工具跟著更新（新公告會跳通知） */
   const pushCtx = { gid, uid, boardName: groupName, authorName: session.nickname ?? '' };
 
-  /** 新項目放在目前畫面正中間，疊在最上層；滑動模式看不到白板，就放在所有東西的右邊 */
+  /** 新項目放在目前畫面正中間，疊在最上層；排隊時看不到白板，就放在所有東西的右邊 */
   const placeNew = (w: number, h: number) => {
     const c = canvas.current?.viewCenter();
     if (c && Number.isFinite(c.x)) return { x: c.x - w / 2, y: c.y - h / 2, w, h, z: maxZ + 1 };
@@ -192,7 +198,7 @@ export function BoardScreen({
     return { x: right, y: top, w, h, z: maxZ + 1 };
   };
 
-  /** 排隊、滑動時新項目會直接排進去，鏡頭跟過去看它在哪 */
+  /** 排隊時新項目會直接排進去，鏡頭跟過去看它在哪 */
   const showNew = (id: string) => {
     if (!free) canvas.current?.focus(id);
   };
@@ -208,7 +214,8 @@ export function BoardScreen({
     notifyBoardChange(pushCtx, null, draft);
   };
 
-  const startNote = (announcement: boolean) =>
+  /** due：指定日期時間（從行事曆新增時），沒給就是公告預設下一個整點 */
+  const startNote = (announcement: boolean, due?: number) =>
     setEditing({
       id: null,
       size: announcement ? { w: 300, h: 220 } : { w: 220, h: 200 },
@@ -218,7 +225,7 @@ export function BoardScreen({
         color: announcement ? '#FFFFFF' : NOTE_COLORS[0],
         fontSize: 20,
         priority: announcement ? 'important' : 'none',
-        dueAt: announcement ? defaultDue(now) : null,
+        dueAt: due ?? (announcement ? defaultDue(now) : null),
         endAt: null,
         photos: [],
         carousel: false,
@@ -587,46 +594,28 @@ export function BoardScreen({
         ) : null}
       </View>
 
-      {mode === 'swipe' ? (
-        <SwipeBoard
-          ref={canvas}
-          items={items}
-          now={now}
-          onChangeMode={setMode}
-          selectedIds={selection.map((i) => i.id)}
-          isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
-          readCount={readCount}
-          memberCount={members.length}
-          onTap={sel.tap}
-          onLongPress={sel.longPress}
-          onOpen={inspect}
-          onAdd={() => startNote(true)}
-        />
-      ) : (
-        <Canvas
-          ref={canvas}
-          items={items}
-          now={now}
-          queued={queued}
-          onChangeMode={setMode}
-          group={prefs.group}
-          onChangeGroup={setGroup}
-          selectedIds={selection.map((i) => i.id)}
-          multi={multi}
-          isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
-          readCount={readCount}
-          memberCount={members.length}
-          onTap={sel.tap}
-          onLongPress={sel.longPress}
-          onClear={sel.clear}
-          onHide={sel.drop}
-          onOpen={inspect}
-          onCommit={commit}
-          onCommitGroup={commitGroup}
-        />
-      )}
+      <Canvas
+        ref={canvas}
+        items={items}
+        now={now}
+        queued={queued}
+        onChangeMode={setMode}
+        selectedIds={selection.map((i) => i.id)}
+        multi={multi}
+        isPending={(i) => isAnnouncement(i) && !isAckedBy(i, uid)}
+        readCount={readCount}
+        memberCount={members.length}
+        onTap={sel.tap}
+        onLongPress={sel.longPress}
+        onClear={sel.clear}
+        onOpen={inspect}
+        onToggleTask={flipTask}
+        onCommit={commit}
+        onCommitGroup={commitGroup}
+        onAdd={startNote}
+      />
 
-      {items.length === 0 && mode !== 'swipe' ? (
+      {items.length === 0 && free ? (
         <View pointerEvents="none" style={s.emptyHint}>
           <Text style={s.emptyTitle}>白板空空的～</Text>
           <Text style={s.emptySub}>
@@ -708,6 +697,7 @@ export function BoardScreen({
           access={canEdit(inspecting) ? 'edit' : askedFor(inspecting) ? 'waiting' : 'ask'}
           onAck={() => ack(inspecting)}
           onToggleTask={(task, done) => toggleTask(inspecting, task, done)}
+          onStatus={(status) => organizeItem(gid, inspecting.id, { status }).catch((e) => showError('改狀態失敗', e))}
           onEdit={() => {
             setInspectId(null);
             open(inspecting.id);
@@ -752,7 +742,18 @@ export function BoardScreen({
         />
       ) : null}
       {panel === 'calendar' ? (
-        <CalendarSheet items={items} uid={uid} onAck={ack} onLocate={locate} onClose={() => setPanel('none')} />
+        <CalendarSheet
+          items={items}
+          uid={uid}
+          onAck={ack}
+          onLocate={locate}
+          onAdd={(day) => {
+            setPanel('none');
+            // 今天：下一個整點；其他天：早上 9 點
+            startNote(true, day === startOfDay(now) ? defaultDue(now) : new Date(day).setHours(9, 0, 0, 0));
+          }}
+          onClose={() => setPanel('none')}
+        />
       ) : null}
       {panel === 'invite' ? (
         <InviteSheet
@@ -857,7 +858,7 @@ function Tool({ icon, label, color, onPress, compact }: ToolDef & { compact: boo
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   screen: { flex: 1, backgroundColor: C.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
   loading: { fontFamily: F.display, fontSize: 16, color: C.sub, marginTop: 14 },
@@ -883,7 +884,7 @@ const s = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#F4EEFF',
+    backgroundColor: C.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
@@ -898,8 +899,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  alertBtn: { backgroundColor: C.primary, borderColor: '#FFC2D6' },
-  settingsBtn: { backgroundColor: '#F4EEFF', borderColor: '#F4EEFF' },
+  alertBtn: { backgroundColor: C.primary, borderColor: C.primary + '66' },
+  settingsBtn: { backgroundColor: C.canvas, borderColor: C.canvas },
   badge: {
     position: 'absolute',
     top: -4,
@@ -961,4 +962,4 @@ const s = StyleSheet.create({
   multiAllText: { fontSize: 14, fontFamily: F.display, color: '#FFF' },
   toolIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   toolText: { fontSize: 12, fontFamily: F.display, color: C.ink, marginTop: 3 },
-});
+}));

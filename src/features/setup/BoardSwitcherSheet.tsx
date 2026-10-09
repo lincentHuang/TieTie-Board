@@ -1,8 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
-import { C, F, Ionicons, Squishy } from '@/components/ui';
+import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
 import { useSession } from '@/lib/session';
 import { colorOf } from '@/lib/types';
 
@@ -66,7 +66,7 @@ export function BoardSwitcherSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   list: { gap: 8 },
   row: {
     flexDirection: 'row',
@@ -79,11 +79,11 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
-  rowCurrent: { borderColor: '#FFC2D6', backgroundColor: '#FFF7FA' },
+  rowCurrent: { borderColor: C.primary + '66', backgroundColor: C.primary + '0D' },
   icon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   iconText: { fontFamily: F.display, fontSize: 20, color: '#FFF' },
   name: { fontFamily: F.display, fontSize: 18, color: C.ink },
   code: { fontSize: 12, color: C.sub, marginTop: 2, letterSpacing: 1 },
   currentChip: { backgroundColor: C.primary, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   currentText: { fontFamily: F.display, fontSize: 13, color: '#FFF' },
-});
+}));

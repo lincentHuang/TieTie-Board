@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { Button, C, F } from '@/components/ui';
+import { Button, C, F, themed } from '@/components/ui';
 import { errorMessage } from '@/lib/errors';
 import { canLoginWithGoogle } from '@/lib/firebase';
 import { canLoginWithLine } from '@/lib/liff';
@@ -82,7 +82,7 @@ export function AccountCard({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   options: { gap: 10, marginTop: 16 },
   hint: { fontSize: 13, color: C.sub, textAlign: 'center' },
   error: { color: C.urgent, fontSize: 14, fontFamily: F.display },
@@ -99,4 +99,4 @@ const s = StyleSheet.create({
   },
   meName: { fontFamily: F.display, fontSize: 18, color: C.ink },
   meHint: { fontSize: 13, color: C.sub, marginTop: 2 },
-});
+}));

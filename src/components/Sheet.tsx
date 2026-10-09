@@ -15,12 +15,14 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { C, F, Ionicons } from './ui';
+import { C, F, Ionicons, themed } from './ui';
 import { useBlockPullToClose } from './useBlockPullToClose';
 
 /** 往下拖超過這個距離（或甩得夠快）放開就關掉，不然彈回去 */
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 900;
+/** fill 面板四周留的空隙 */
+const FILL_GAP = 16;
 
 /**
  * 從下方滑出的面板（寬螢幕時置中）：往下拖頂端的把手或標題就能關掉；
@@ -33,12 +35,15 @@ export function Sheet({
   onClose,
   children,
   footer,
+  fill = false,
 }: {
   visible: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** 固定大小：佔滿整個畫面、四周留一圈 16 的空隙，不會隨內容多寡變高變矮 */
+  fill?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const { height: screenH } = useWindowDimensions();
@@ -124,11 +129,16 @@ export function Sheet({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={dismiss}>
       {/* Android 的 Modal 是另一個視窗，要自己包一層手勢才收得到 */}
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={[
+            s.backdrop,
+            fill && { justifyContent: 'center', padding: FILL_GAP, paddingTop: insets.top + FILL_GAP, paddingBottom: insets.bottom + FILL_GAP },
+          ]}>
           <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, s.dim, dimStyle]} />
           <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityLabel="關閉" />
           <Animated.View
-            style={[s.card, { paddingBottom: Math.max(insets.bottom, 16) }, cardStyle]}
+            style={[s.card, fill ? s.cardFill : { paddingBottom: Math.max(insets.bottom, 16) }, cardStyle]}
             onLayout={(e) => cardH.set(e.nativeEvent.layout.height)}>
             <GestureDetector gesture={headPan}>
               <View ref={headRef} style={s.handle}>
@@ -162,7 +172,7 @@ export function Sheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   backdrop: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   dim: { backgroundColor: '#3B2A5A66' },
   card: {
@@ -174,10 +184,11 @@ const s = StyleSheet.create({
     borderTopRightRadius: 32,
     ...(Platform.OS === 'web' ? { marginBottom: 'auto', marginTop: 'auto', borderRadius: 32 } : null),
   },
+  cardFill: { flex: 1, maxHeight: '100%', borderRadius: 32, paddingBottom: 16, marginTop: 0, marginBottom: 0 },
   // 把手和標題一起當拖曳的地方，手指比較好抓
   handle: { paddingTop: 10 },
   grabber: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, backgroundColor: C.line },
-  close: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F4EEFF', alignItems: 'center', justifyContent: 'center' },
+  close: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.canvas, alignItems: 'center', justifyContent: 'center' },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,4 +200,4 @@ const s = StyleSheet.create({
   title: { fontSize: 22, fontFamily: F.display, color: C.ink },
   body: { paddingHorizontal: 20 },
   footer: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 12 },
-});
+}));

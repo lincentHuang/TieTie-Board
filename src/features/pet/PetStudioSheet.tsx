@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F } from '@/components/ui';
+import { Button, C, F, themed } from '@/components/ui';
 
 import { PetEditor } from './PetEditor';
 import { levelOf, titleOf, XP, type PetConfig } from './pet-types';
@@ -58,12 +58,12 @@ export function PetStudioSheet({
   );
 }
 
-const s = StyleSheet.create({
-  levelCard: { backgroundColor: '#F4EEFF', borderRadius: 20, padding: 14, marginBottom: 12 },
+const s = themed(() => ({
+  levelCard: { backgroundColor: C.canvas, borderRadius: 20, padding: 14, marginBottom: 12 },
   levelRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   levelBig: { fontFamily: F.display, fontSize: 26, color: C.lavender },
   levelTitle: { fontFamily: F.display, fontSize: 16, color: C.ink },
   bar: { height: 12, borderRadius: 6, backgroundColor: '#FFFFFF', marginTop: 8, overflow: 'hidden' },
   barFill: { height: 12, borderRadius: 6, backgroundColor: C.primary },
   levelHint: { fontSize: 12, color: C.sub, marginTop: 6 },
-});
+}));

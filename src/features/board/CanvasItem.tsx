@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -19,9 +19,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { C, Ionicons } from '@/components/ui';
+import { C, Ionicons, themed } from '@/components/ui';
 import type { BoardItem, Geometry } from '@/lib/types';
 
+import { cardTaskRowH } from './Checklist';
 import { ItemBody } from './ItemBody';
 import type { Move, Nervous } from './wander';
 
@@ -53,6 +54,8 @@ const BUMP_MS = 340;
 /** 點兩下：第二下要在第一下放開後多久內、離第一下多近（螢幕像素）才算 */
 const DOUBLE_TAP_MS = 400;
 const DOUBLE_TAP_DIST = 40;
+/** 白板放大到卡片上一項待辦在螢幕上有這麼高（像素），就可以直接點那一項打勾 */
+const TASK_TAP_H = 28;
 const clock = () => {
   'worklet';
   return Date.now();
@@ -112,8 +115,12 @@ interface Props {
   onTap: (id: string) => void;
   onLongPress: (id: string) => void;
   onOpen: (id: string) => void;
+  /** 放大後直接點卡片上的一項待辦 */
+  onToggleTask: (id: string, taskId: string) => void;
   onCommit: (id: string, geo: Geometry) => void;
   onCommitGroup: (dx: number, dy: number) => void;
+  /** 排隊時：這張卡片剛好裝下內容要多高 */
+  onFit?: (id: string, height: number) => void;
 }
 
 /**
@@ -144,8 +151,10 @@ export function CanvasItem({
   onTap,
   onLongPress,
   onOpen,
+  onToggleTask,
   onCommit,
   onCommitGroup,
+  onFit,
 }: Props) {
   const x = useSharedValue(spot.x);
   const y = useSharedValue(spot.y);
@@ -468,6 +477,30 @@ export function CanvasItem({
     scheduleOnRN(onTap, id);
   });
 
+  // 放大到待辦的字夠大：點一項就打勾 / 取消（點卡片其他地方照舊選取、點兩下打開）
+  const [taskTappable, setTaskTappable] = useState(false);
+  const tapScale = TASK_TAP_H / cardTaskRowH(item.fontSize);
+  useAnimatedReaction(
+    () => scale.get() >= tapScale,
+    (on, prev) => {
+      if (on !== prev) scheduleOnRN(setTaskTappable, on);
+    },
+  );
+  // 排隊時卡片是原本大小，待辦直接點一項就打勾（點卡片其他地方還是選取 / 打開）
+  const tasksTappable = (queued || taskTappable) && !multi;
+  const taskTaps = new Map(
+    item.tasks.map((t) => [
+      t.id,
+      Gesture.Tap()
+        .enabled(tasksTappable)
+        .maxDistance(10)
+        .onEnd((_e, success) => {
+          if (success) scheduleOnRN(onToggleTask, id, t.id);
+        }),
+    ]),
+  );
+  tap.requireExternalGestureToFail(...taskTaps.values());
+
   const gesture = Gesture.Race(drag, longPress, tap);
 
   const boxStyle = useAnimatedStyle(() => ({
@@ -558,8 +591,17 @@ export function CanvasItem({
               readCount={readCount}
               memberCount={memberCount}
               tidy={queued}
+              onFit={onFit ? (height) => onFit(id, height) : undefined}
               w={w}
               h={h}
+              wrapTask={
+                tasksTappable
+                  ? (task, _done, row) => {
+                      const g = taskTaps.get(task.id);
+                      return g ? <GestureDetector gesture={g}>{row}</GestureDetector> : row;
+                    }
+                  : undefined
+              }
             />
             {pending ? <PendingPulse scale={scale} /> : null}
           </View>
@@ -770,7 +812,7 @@ function PendingPulse({ scale }: { scale: SharedValue<number> }) {
   return <Animated.View pointerEvents="none" style={[s.pulse, style]} />;
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   box: { position: 'absolute' },
   fill: { flex: 1 },
   outline: { borderColor: C.primary, borderRadius: 8 },
@@ -799,4 +841,4 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   checkOn: { backgroundColor: C.primary, borderColor: '#FFF' },
-});
+}));

@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { Sheet } from '@/components/Sheet';
-import { Button, C, F, Ionicons, Label, Segmented } from '@/components/ui';
+import { Button, C, F, Ionicons, Label, Segmented, themed } from '@/components/ui';
 import {
   MAX_TAGS,
   normalizeTag,
@@ -176,7 +176,7 @@ export function OrganizeManySheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => ({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tag: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 32, paddingHorizontal: 12, borderRadius: 16 },
   tagOnText: { fontSize: 14, fontFamily: F.display, color: '#FFF' },
@@ -197,6 +197,6 @@ const s = StyleSheet.create({
     color: C.ink,
   },
   addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
-  itemTitle: { fontSize: 17, fontFamily: F.display, color: C.ink, backgroundColor: '#F7F2FF', borderRadius: 14, padding: 12 },
+  itemTitle: { fontSize: 17, fontFamily: F.display, color: C.ink, backgroundColor: C.bg, borderRadius: 14, padding: 12 },
   hint: { fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 18 },
-});
+}));
