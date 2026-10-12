@@ -163,7 +163,8 @@ export function Canvas({
     if (i.type !== 'note') return i;
     const w = stretch ? Math.min(STRETCH_MAX, room) : i.w;
     const fit = fitH[i.id];
-    const h = fit ? Math.round(Math.min(i.h * FIT_MAX_GROW, Math.max(FIT_MIN_H, fit))) : i.h;
+    // 有照片的照片要照比例放，不設長高上限
+    const h = fit ? Math.round(Math.min(i.photos.length ? Infinity : i.h * FIT_MAX_GROW, Math.max(FIT_MIN_H, fit))) : i.h;
     return { ...i, w, h };
   });
   // 完成的（狀態完成、或待辦全勾完）收進封存：平常不排隊，按右上角 📦 才看得到，把狀態改回來就回到隊伍

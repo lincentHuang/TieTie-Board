@@ -19,4 +19,6 @@
 - 2026-10-09：整併提交推上 main（f9d871f），EAS 建置 Android APK versionCode 8 並發布 GitHub Release android-v1.0.0-8
 - 2026-10-09：真正修好手機網頁「點兩下卡片打不開檢視視窗」：原因是手指放開後瀏覽器補送的 click 打在剛彈出的視窗背景上、馬上把視窗關掉（10/08 改點兩下判斷沒解決到）；用手勢打開面板前先把那組補送事件吃掉，排隊最下面「新增」卡片也一樣（src/features/board/ghost-click.ts、CanvasItem.tsx、Canvas.tsx）。Android App 在模擬器實測點兩下本來就正常
 - 2026-10-09：修好正式版房主／被同意的人編輯別人項目時「沒有權限」：GitHub Action 仍缺 FIREBASE_SERVICE_ACCOUNT，endAt 的規則沒上傳，改從本機手動部署 firestore.rules（npm run deploy:rules）
+- 2026-10-12：便利貼內容工具列加「照片」按鈕，挑的照片縮圖排在內容輸入框上方（照片從進階設定移出；ItemEditor.tsx、PhotoPicker.tsx 的 useAddPhotos）
 - 2026-10-12：修好 PWA 上傳圖片失敗：expo-image-manipulator 網頁版會把原尺寸照片整張畫進 canvas 再用 JS 逐點縮圖，手機照片（1200 萬～4800 萬像素）在 iPhone Safari 超過 canvas 大小／記憶體上限就失敗；網頁改成瀏覽器解碼後直接畫到目標大小（1200 萬像素從 2.3 秒降到 0.08 秒），多張照片改一張一張處理，HEIC 讀不了時顯示看得懂的訊息（src/lib/images.ts）
+- 2026-10-12：修排隊模式有照片的便利貼照片被壓扁：照片改照卡片寬度固定比例（高≈寬×0.62），卡片高度跟著長高、不設長高上限（ItemBody.tsx、Canvas.tsx）

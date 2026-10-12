@@ -25,6 +25,10 @@ import { CardTasks } from './Checklist';
 const TAPES = ['#FF9BB8', '#8FD9C4', '#FFD66B', '#A9C8FF', '#C9B4FF'];
 /** 輪播時每張照片停留多久 */
 const SLIDE_MS = 4000;
+/** 排隊精簡時照片的寬高比（高 = 寬 × 這個數），和扣掉白邊、左右留白的寬度、上下留白 */
+const PHOTO_RATIO = 0.62;
+const PHOTO_INSET = 26;
+const PHOTO_PAD = 12;
 
 /** 從 id 算出固定的小變化：每張紙歪的角度、紙膠帶顏色 */
 function quirks(id: string) {
@@ -62,11 +66,11 @@ export function ItemBody({
   onFit?: (height: number) => void;
 }) {
   // 內文區分到多高、內文實際排出來多高：卡片高度扣掉多的（或補上不夠的）就是剛好的高度
-  const fitBox = useRef({ body: 0, text: 0 });
+  const fitBox = useRef({ body: -1, text: -1 });
   const measure = (part: 'body' | 'text', value: number) => {
     const box = fitBox.current;
     box[part] = value;
-    if (onFit && box.body && box.text) onFit(Math.ceil(h.get() - box.body + box.text));
+    if (onFit && box.body >= 0 && box.text >= 0) onFit(Math.ceil(h.get() - box.body + box.text));
   };
   const stickerStyle = useAnimatedStyle(() => ({
     fontSize: Math.min(w.get(), h.get()) * 0.78,
@@ -168,8 +172,9 @@ export function ItemBody({
     );
   }
 
-  // 有照片、只放檔案（大圖示）的卡片照原本大小，不精簡
-  const fits = onFit && !item.photos.length && !(item.files.length && !item.text);
+  // 只放檔案（大圖示）的卡片照原本大小，不精簡；有照片的照片固定比例、文字照實際高度
+  const fits = onFit && !(item.files.length && !item.text && !item.photos.length);
+  const fixedPhoto = !!fits && item.photos.length > 0;
   const bodyLayout = fits ? (e: LayoutChangeEvent) => measure('body', e.nativeEvent.layout.height) : undefined;
   const textLayout = fits ? (e: LayoutChangeEvent) => measure('text', e.nativeEvent.layout.height) : undefined;
 
@@ -195,8 +200,15 @@ export function ItemBody({
               <RichText text={item.text} fontSize={item.fontSize} lineHeight={item.fontSize * 1.35} style={[s.flowText, done && s.doneText]} />
             </View>
           </View>
+        ) : fixedPhoto ? (
+          // 只有照片：文字區是空的，回報 0 高讓卡片剛好裝下照片
+          <View style={s.noteBody} onLayout={bodyLayout}>
+            <View style={s.noteEmpty} onLayout={textLayout} />
+          </View>
         ) : null}
-        {item.photos.length ? <CardPhotos photos={item.photos} carousel={item.carousel} /> : null}
+        {item.photos.length ? (
+          <CardPhotos photos={item.photos} carousel={item.carousel} w={w} fixed={fixedPhoto} />
+        ) : null}
         {item.files.length ? <CardFiles files={item.files} big={!item.text && !item.photos.length} /> : null}
         {tags}
         {footer}
@@ -213,7 +225,19 @@ export function ItemBody({
 
 /** 便利貼上的照片：平常只放封面（第一張）；開了輪播就從封面開始輪流換。
     白板上的卡片要能拖曳，所以不做手指滑動（照片也不收手指，按著照片一樣拖得動），其他照片點兩下卡片再看 */
-function CardPhotos({ photos, carousel }: { photos: string[]; carousel: boolean }) {
+function CardPhotos({
+  photos,
+  carousel,
+  w,
+  fixed,
+}: {
+  photos: string[];
+  carousel: boolean;
+  w: SharedValue<number>;
+  /** 排隊精簡時照片照卡片寬度固定比例、不跟文字分空間，卡片跟著長高，照片才不會被擠扁 */
+  fixed: boolean;
+}) {
+  const fixedStyle = useAnimatedStyle(() => ({ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', height: Math.round((w.get() - PHOTO_INSET) * PHOTO_RATIO) + PHOTO_PAD }));
   const reduced = useReducedMotion();
   const rotating = carousel && photos.length > 1;
   const count = photos.length;
@@ -227,7 +251,7 @@ function CardPhotos({ photos, carousel }: { photos: string[]; carousel: boolean 
 
   const shown = rotating ? at % count : 0;
   return (
-    <View pointerEvents="none" style={s.photos}>
+    <Animated.View pointerEvents="none" style={[s.photos, fixed && fixedStyle]}>
       <Image
         source={{ uri: photos[shown] }}
         style={s.coverPhoto}
@@ -247,7 +271,7 @@ function CardPhotos({ photos, carousel }: { photos: string[]; carousel: boolean 
           <Text style={s.moreText}>{count}</Text>
         </View>
       ) : null}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -316,6 +340,7 @@ const s = themed(() => ({
   flowText: { color: C.ink, fontFamily: F.display },
   // 有文字時照片佔多一點點，照片才看得清楚
   photos: { flex: 1.3, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 4 },
+  noteEmpty: { position: 'absolute', top: 0, left: 0, right: 0, height: 0 },
   coverPhoto: { flex: 1, borderRadius: 10, backgroundColor: '#0000000D' },
   dots: { position: 'absolute', bottom: 14, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF8C' },

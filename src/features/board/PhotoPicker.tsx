@@ -9,12 +9,12 @@ import { MAX_PHOTOS } from '@/lib/types';
 
 import { PhotoViewer } from './PhotoViewer';
 
-/** 便利貼附的照片：一排縮圖，第一張是封面；點照片放大看，按 ☆ 換封面、按 ✕ 拿掉，最後一格可以再加 */
-export function PhotoPicker({ value, onChange }: { value: string[]; onChange: (photos: string[]) => void }) {
+/** 挑照片加進便利貼：縮圖格的「加照片」和內容工具列的「照片」按鈕共用 */
+export function useAddPhotos(value: string[], onChange: (photos: string[]) => void) {
   const [busy, setBusy] = useState(false);
-  const [viewing, setViewing] = useState<number | null>(null);
-
+  const full = value.length >= MAX_PHOTOS;
   const add = async () => {
+    if (full) return showError('照片滿了', new Error(`最多 ${MAX_PHOTOS} 張，先拿掉幾張再加`));
     setBusy(true);
     try {
       const picked = await pickPhotos(MAX_PHOTOS - value.length);
@@ -34,6 +34,13 @@ export function PhotoPicker({ value, onChange }: { value: string[]; onChange: (p
       setBusy(false);
     }
   };
+  return { add, busy, full };
+}
+
+/** 便利貼附的照片：一排縮圖，第一張是封面；點照片放大看，按 ☆ 換封面、按 ✕ 拿掉，最後一格可以再加 */
+export function PhotoPicker({ value, onChange }: { value: string[]; onChange: (photos: string[]) => void }) {
+  const { add, busy } = useAddPhotos(value, onChange);
+  const [viewing, setViewing] = useState<number | null>(null);
 
   return (
     <View style={s.row}>

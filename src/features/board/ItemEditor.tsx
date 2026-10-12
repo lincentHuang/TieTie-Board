@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
@@ -13,7 +13,6 @@ import type { PickedFile } from '@/lib/documents';
 import { hasFormatting, insertLink, safeUrl, toggleHeading, wrapSelection, type Selection } from '@/lib/rich-text';
 import {
   MAX_FILES,
-  MAX_PHOTOS,
   MAX_TASK_TEXT,
   MAX_TASKS,
   NOTE_COLORS,
@@ -30,7 +29,7 @@ import { ChecklistEditor } from './ChecklistEditor';
 import { applyEnd, applyWhen, parseWhen } from './parse-when';
 import { DateTimeField } from './DateTimeField';
 import { StatusPicker, TagPicker } from './Organize';
-import { PhotoPicker } from './PhotoPicker';
+import { PhotoPicker, useAddPhotos } from './PhotoPicker';
 import { PhotoViewer } from './PhotoViewer';
 import { cleanTasks, newTask, takeLines } from './todos';
 
@@ -141,11 +140,12 @@ export function ItemEditor({
   const tags = autoTags
     ? withAutoTags(draft.tags, tagSource(draft), isNew ? null : tagSource(initial), known)
     : draft.tags;
+  /** 內容工具列的「照片」：挑完照片顯示在內容上方 */
+  const photos = useAddPhotos(draft.photos, (next) => set({ photos: next }));
   const advancedSummary = [
-    draft.photos.length ? `照片 ${draft.photos.length}` : '',
     draft.files.length ? `檔案 ${draft.files.length}` : '',
     draft.status !== 'none' ? STATUS_META[draft.status].label : '',
-    isImage ? '狀態、標籤' : '照片、檔案、顏色、字體…',
+    isImage ? '狀態、標籤' : '檔案、顏色、字體…',
   ]
     .filter(Boolean)
     .join('・');
@@ -253,7 +253,22 @@ export function ItemEditor({
         </>
       ) : (
         <>
-          <NoteText draft={draft} autoFocus={isNew && !listFirst} listFirst={listFirst} onChange={changeText} onAddTasks={addTasks} />
+          <NoteText
+            draft={draft}
+            autoFocus={isNew && !listFirst}
+            listFirst={listFirst}
+            onChange={changeText}
+            onAddTasks={addTasks}
+            onAddPhotos={photos.add}
+            photosBusy={photos.busy}
+            photos={
+              draft.photos.length ? (
+                <View style={s.photos}>
+                  <PhotoPicker value={draft.photos} onChange={(next) => set({ photos: next })} />
+                </View>
+              ) : null
+            }
+          />
           {/* 待辦清單算內容的一部分：緊接在內容下面編 */}
           {draft.tasks.length || listFirst ? (
             <ChecklistEditor tasks={draft.tasks} focusFirst={listFirst} focusId={taskFocus} onChange={(tasks) => set({ tasks })} />
@@ -309,8 +324,6 @@ export function ItemEditor({
         <>
           {!isImage ? (
             <>
-            <Label>照片（選填，最多 {MAX_PHOTOS} 張）</Label>
-            <PhotoPicker value={draft.photos} onChange={(photos) => set({ photos })} />
             {draft.photos.length > 1 ? (
               <>
                 <View style={s.row}>
@@ -377,6 +390,9 @@ function NoteText({
   listFirst,
   onChange,
   onAddTasks,
+  onAddPhotos,
+  photosBusy,
+  photos,
 }: {
   draft: Draft;
   autoFocus: boolean;
@@ -385,6 +401,11 @@ function NoteText({
   onChange: (text: string) => void;
   /** 「待辦」按鈕：選到的幾行搬去待辦清單（沒選字就加一項空白的） */
   onAddTasks: (texts: string[]) => void;
+  /** 「照片」按鈕：挑照片，縮圖排在內容上方 */
+  onAddPhotos: () => void;
+  photosBusy: boolean;
+  /** 已加的照片縮圖，放在內容輸入框上方 */
+  photos: ReactNode;
 }) {
   const text = draft.text;
   const [rawSel, setSel] = useState<Selection>({ start: text.length, end: text.length });
@@ -429,6 +450,7 @@ function NoteText({
           <Tool icon="color-wand" label="重點" onPress={() => apply(wrapSelection(text, sel, '**', '**', '重點'))} />
           <Tool icon="link" label="連結" active={linking} onPress={() => setLinking((v) => !v)} />
           <Tool icon="checkbox-outline" label="待辦" onPress={toTodo} />
+          <Tool icon="images" label="照片" a11y="加照片" active={photosBusy} onPress={onAddPhotos} />
         </View>
       )}
       {linking ? (
@@ -448,6 +470,7 @@ function NoteText({
           <Button label="加入" onPress={addLink} disabled={!url.trim()} />
         </View>
       ) : null}
+      {photos}
       <TextInput
         value={text}
         onChangeText={onChange}
@@ -483,12 +506,25 @@ function NoteText({
   );
 }
 
-function Tool({ icon, label, active, onPress }: { icon: IconName; label: string; active?: boolean; onPress: () => void }) {
+function Tool({
+  icon,
+  label,
+  a11y,
+  active,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  /** 讀螢幕用的說明；預設「標成〇〇」 */
+  a11y?: string;
+  active?: boolean;
+  onPress: () => void;
+}) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`標成${label}`}
+      accessibilityLabel={a11y ?? `標成${label}`}
       style={({ pressed }) => [s.tool, (active || pressed) && s.toolOn]}>
       <Ionicons name={icon} size={16} color={active ? '#FFF' : C.ink} />
       <Text style={[s.toolText, active && { color: '#FFF' }]}>{label}</Text>
@@ -527,7 +563,8 @@ const s = themed(() => ({
   swatchActive: { borderWidth: 4, borderColor: C.primary },
   hint: { fontSize: 13, color: C.sub, marginTop: 8, lineHeight: 18 },
   hintTight: { marginTop: 0 },
-  tools: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  tools: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  photos: { marginBottom: 10 },
   tool: {
     flexDirection: 'row',
     alignItems: 'center',
