@@ -65,12 +65,14 @@ export function ItemBody({
   /** 排隊時要精簡空間：回報卡片剛好裝下內容要多高（只有文字、待辦的便利貼才回報） */
   onFit?: (height: number) => void;
 }) {
-  // 內文區分到多高、內文實際排出來多高：卡片高度扣掉多的（或補上不夠的）就是剛好的高度
-  const fitBox = useRef({ body: -1, text: -1 });
-  const measure = (part: 'body' | 'text', value: number) => {
+  // 卡片多高、內文區分到多高、內文實際排出來多高：卡片高度扣掉多的（或補上不夠的）就是剛好的高度。
+  // 卡片高度也要量版面，不能用 h.get()：長高縮短的動畫途中它跟版面對不上，算錯會把內文區擠到 0 高，
+  // 內文區之後一直是 0 就不會再回報，卡片永遠卡在只剩照片的高度
+  const fitBox = useRef({ card: -1, body: -1, text: -1 });
+  const measure = (part: 'card' | 'body' | 'text', value: number) => {
     const box = fitBox.current;
     box[part] = value;
-    if (onFit && box.body >= 0 && box.text >= 0) onFit(Math.ceil(h.get() - box.body + box.text));
+    if (onFit && box.card >= 0 && box.body >= 0 && box.text >= 0) onFit(Math.ceil(box.card - box.body + box.text));
   };
   const stickerStyle = useAnimatedStyle(() => ({
     fontSize: Math.min(w.get(), h.get()) * 0.78,
@@ -175,12 +177,13 @@ export function ItemBody({
   // 只放檔案（大圖示）的卡片照原本大小，不精簡；有照片的照片固定比例、文字照實際高度
   const fits = onFit && !(item.files.length && !item.text && !item.photos.length);
   const fixedPhoto = !!fits && item.photos.length > 0;
+  const cardLayout = fits ? (e: LayoutChangeEvent) => measure('card', e.nativeEvent.layout.height) : undefined;
   const bodyLayout = fits ? (e: LayoutChangeEvent) => measure('body', e.nativeEvent.layout.height) : undefined;
   const textLayout = fits ? (e: LayoutChangeEvent) => measure('text', e.nativeEvent.layout.height) : undefined;
 
   return (
     <View style={[s.fill, { transform: [{ rotate: `${tilt}deg` }] }]}>
-      <View style={[s.fill, s.note, { backgroundColor: item.color }, announce && { borderColor: meta.color }]}>
+      <View style={[s.fill, s.note, { backgroundColor: item.color }, announce && { borderColor: meta.color }]} onLayout={cardLayout}>
         {header}
         {/* 文字高度不能被卡片限制：iOS 放不下時會把最後一行從字中間切掉，而不是整個字換到下一行。
             所以文字用絕對定位照自己的高度排版，多出來的由外框裁掉 */}
@@ -207,7 +210,8 @@ export function ItemBody({
           </View>
         ) : null}
         {item.photos.length ? (
-          <CardPhotos photos={item.photos} carousel={item.carousel} w={w} fixed={fixedPhoto} />
+          // 排隊、自由切換時整個換一個：網頁上 Reanimated 的樣式加上又拿掉，會連原本的 flex 一起清掉，照片就縮成一條線
+          <CardPhotos key={fixedPhoto ? 'fixed' : 'flex'} photos={item.photos} carousel={item.carousel} w={w} fixed={fixedPhoto} />
         ) : null}
         {item.files.length ? <CardFiles files={item.files} big={!item.text && !item.photos.length} /> : null}
         {tags}
@@ -339,7 +343,7 @@ const s = themed(() => ({
   noteFlow: { position: 'absolute', top: 0, left: 0, right: 0, padding: 12, gap: 6 },
   flowText: { color: C.ink, fontFamily: F.display },
   // 有文字時照片佔多一點點，照片才看得清楚
-  photos: { flex: 1.3, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 4 },
+  photos: { flexGrow: 1.3, flexShrink: 1, flexBasis: 0, paddingHorizontal: 8, paddingBottom: 8, paddingTop: 4 },
   noteEmpty: { position: 'absolute', top: 0, left: 0, right: 0, height: 0 },
   coverPhoto: { flex: 1, borderRadius: 10, backgroundColor: '#0000000D' },
   dots: { position: 'absolute', bottom: 14, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 5 },
