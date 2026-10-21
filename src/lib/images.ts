@@ -90,4 +90,18 @@ export async function pickPhotos(limit: number): Promise<string[]> {
   return picked;
 }
 
+/** 網頁：把剪貼簿貼上的圖片檔壓成便利貼照片（最多 limit 張） */
+export async function photosFromFiles(files: Blob[], limit: number): Promise<string[]> {
+  const picked: string[] = [];
+  for (const f of files.slice(0, limit)) {
+    const uri = URL.createObjectURL(f);
+    try {
+      picked.push((await compressWeb({ uri, width: 0, height: 0 } as ImagePicker.ImagePickerAsset, PHOTO_SIDE)).dataUrl);
+    } finally {
+      URL.revokeObjectURL(uri);
+    }
+  }
+  return picked;
+}
+
 export const photosTooBig = (photos: string[]) => photos.reduce((n, p) => n + p.length, 0) > PHOTOS_BUDGET;

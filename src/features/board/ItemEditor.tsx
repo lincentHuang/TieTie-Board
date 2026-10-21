@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { useState, type ReactNode } from 'react';
-import { Pressable, Switch, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Platform, Pressable, Switch, Text, TextInput, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
@@ -260,6 +260,7 @@ export function ItemEditor({
             onChange={changeText}
             onAddTasks={addTasks}
             onAddPhotos={photos.add}
+            onPastePhotos={photos.paste}
             photosBusy={photos.busy}
             photos={
               draft.photos.length ? (
@@ -391,6 +392,7 @@ function NoteText({
   onChange,
   onAddTasks,
   onAddPhotos,
+  onPastePhotos,
   photosBusy,
   photos,
 }: {
@@ -403,6 +405,8 @@ function NoteText({
   onAddTasks: (texts: string[]) => void;
   /** 「照片」按鈕：挑照片，縮圖排在內容上方 */
   onAddPhotos: () => void;
+  /** 網頁：在輸入框貼上剪貼簿裡的圖片，直接當照片加進來 */
+  onPastePhotos: (files: Blob[]) => void;
   photosBusy: boolean;
   /** 已加的照片縮圖，放在內容輸入框上方 */
   photos: ReactNode;
@@ -418,6 +422,28 @@ function NoteText({
   const [forced, setForced] = useState<Selection | undefined>();
   const [linking, setLinking] = useState(false);
   const [url, setUrl] = useState('');
+  const input = useRef<TextInput>(null);
+  const pasteRef = useRef(onPastePhotos);
+  useEffect(() => {
+    pasteRef.current = onPastePhotos;
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const el = input.current as unknown as HTMLElement | null;
+    if (!el?.addEventListener) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const data = e.clipboardData;
+      if (!data) return;
+      // 剪貼簿有文字（例如從試算表複製，會同時附一張圖）就照常貼字，只有純圖片才當照片
+      if (data.getData('text/plain').trim()) return;
+      const files = Array.from(data.files).filter((f) => f.type.startsWith('image/'));
+      if (!files.length) return;
+      e.preventDefault();
+      pasteRef.current(files);
+    };
+    el.addEventListener('paste', onPaste);
+    return () => el.removeEventListener('paste', onPaste);
+  }, []);
 
   const apply = (next: { text: string; sel: Selection }) => {
     onChange(next.text);
@@ -472,6 +498,7 @@ function NoteText({
       ) : null}
       {photos}
       <TextInput
+        ref={input}
         value={text}
         onChangeText={onChange}
         selection={forced}

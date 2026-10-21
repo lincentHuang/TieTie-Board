@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { C, F, Ionicons, Squishy, themed } from '@/components/ui';
-import { photosTooBig, pickPhotos } from '@/lib/images';
+import { photosFromFiles, photosTooBig, pickPhotos } from '@/lib/images';
 import { MAX_PHOTOS } from '@/lib/types';
 
 import { PhotoViewer } from './PhotoViewer';
@@ -13,12 +13,12 @@ import { PhotoViewer } from './PhotoViewer';
 export function useAddPhotos(value: string[], onChange: (photos: string[]) => void) {
   const [busy, setBusy] = useState(false);
   const full = value.length >= MAX_PHOTOS;
-  const add = async () => {
+  /** get 拿到照片（data URL）後一張一張放，超過文件大小上限就停，前面放得下的照樣留著 */
+  const run = async (get: (room: number) => Promise<string[]>) => {
     if (full) return showError('照片滿了', new Error(`最多 ${MAX_PHOTOS} 張，先拿掉幾張再加`));
     setBusy(true);
     try {
-      const picked = await pickPhotos(MAX_PHOTOS - value.length);
-      // 一張一張放，超過文件大小上限就停，前面放得下的照樣留著
+      const picked = await get(MAX_PHOTOS - value.length);
       const next = [...value];
       for (const p of picked) {
         if (photosTooBig([...next, p])) break;
@@ -34,7 +34,10 @@ export function useAddPhotos(value: string[], onChange: (photos: string[]) => vo
       setBusy(false);
     }
   };
-  return { add, busy, full };
+  const add = () => run(pickPhotos);
+  /** 網頁：在內容輸入框貼上剪貼簿裡的圖片 */
+  const paste = (files: Blob[]) => run((room) => photosFromFiles(files, room));
+  return { add, paste, busy, full };
 }
 
 /** 便利貼附的照片：一排縮圖，第一張是封面；點照片放大看，按 ☆ 換封面、按 ✕ 拿掉，最後一格可以再加 */
