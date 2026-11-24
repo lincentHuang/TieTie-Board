@@ -34,3 +34,4 @@
 - 2026-11-24：送出 EAS Android APK 建置 versionCode 11（含小工具選公布欄、expo-updates 的 preview channel），建置 bb7e4ed1
 - 2026-11-24：推上 main（8b2cba9），網頁版 Vercel 部署完成；EAS 建置 Android APK versionCode 13（含自動更新與小工具只列未讀）。versionCode 12 因本機 masked-view 的 AndroidManifest.xml 被手改、fingerprint 與 EAS 不一致而失敗，已還原原版檔案；發布 GitHub Release android-v1.0.0-13
 - 2026-11-24：小工具改成未讀公告在上、已讀的排在下方（淡色、打勾），已完成（封存）的公告不顯示（src/features/widgets/widget-data.ts、BoardWidget.tsx、android/BoardAndroidWidget.tsx）
+- 2026-11-24：發布 OTA 更新到 preview channel（Android，runtime 435a8b1，對應 versionCode 13），update group 6b5a0298
