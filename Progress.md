@@ -26,3 +26,4 @@
 - 2026-10-21：修有照片的便利貼：自由模式照片縮成一條線看不到（網頁上排隊用的照片樣式拿掉時連 flex 一起清掉，改成切模式時換一個照片元件、flex 寫成分開的屬性）；排隊模式文字被擠掉只剩照片（量剛好高度改用版面量到的卡片高度，不再用動畫中的 h）（src/features/board/ItemBody.tsx）
 - 2026-11-24：多選的「整理」改名「一起改」，除了狀態、標籤，也能把選的項目一起設成同一個時間或拿掉時間（有結束時間的保留原本長度；只改自己能編輯的，別人貼的會提示略過）；多選只選一個時也用這個面板（src/features/board/Organize.tsx、BoardScreen.tsx、src/lib/repo.ts 的 rescheduleItems）
 - 2026-11-24：手機版（寬度 < 440）白板左上「排隊／自由」與右上「公告／記事」分頁只留圖示和數字，不再擠在一起（src/features/board/ModeBar.tsx、QueueTabs.tsx、Canvas.tsx）
+- 2026-11-24：推上 main（bdf5dfa），EAS 建置 Android APK versionCode 10（含桌面小工具）並發布 GitHub Release android-v1.0.0-10；versionCode 9 是舊程式碼的建置，已取消
