@@ -32,3 +32,4 @@
 - 2026-11-24：加入 App 自動更新（EAS Update）：開 App 與切回 App（最多 30 分鐘一次）自動檢查並背景下載，下載好底部提示「立即更新」，不按則下次開 App 套用；runtimeVersion 用 fingerprint，preview 建置用 channel preview，發布用 `npm run ota -- --message "..."`（app.json、eas.json、src/features/app-updates/、src/app/_layout.tsx）
 - 2026-11-24：Android 小工具加 ↻ 背景更新按鈕（防連按 30 秒），定時抓資料改成最多每 2 小時一次（src/features/widgets/android/task-handler.tsx、BoardAndroidWidget.tsx、storage.ts）
 - 2026-11-24：送出 EAS Android APK 建置 versionCode 11（含小工具選公布欄、expo-updates 的 preview channel），建置 bb7e4ed1
+- 2026-11-24：推上 main（8b2cba9），網頁版 Vercel 部署完成；EAS 建置 Android APK versionCode 13（含自動更新與小工具只列未讀）。versionCode 12 因本機 masked-view 的 AndroidManifest.xml 被手改、fingerprint 與 EAS 不一致而失敗，已還原原版檔案；發布 GitHub Release android-v1.0.0-13
