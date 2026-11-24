@@ -355,6 +355,16 @@ export async function organizeItems(gid: string, patches: { id: string; patch: P
   await batch.commit();
 }
 
+/**
+ * 多選後一起改時間：只能改自己能編輯內容的項目（Firestore 規則也會擋，所以呼叫前要先篩掉別人的，
+ * 否則整批都會失敗）。同一次寫入，不會有的改了、有的沒改
+ */
+export async function rescheduleItems(gid: string, changes: { id: string; when: Pick<BoardItem, 'dueAt' | 'endAt'> }[]) {
+  const batch = writeBatch(db);
+  for (const c of changes) batch.update(doc(itemsRef(gid), c.id), toFirestore(c.when));
+  await batch.commit();
+}
+
 /** 待辦打勾 / 取消：任何成員都可以；只改這一項，別人同時勾別項不會被蓋掉 */
 export const checkTask = (gid: string, id: string, taskId: string, uid: string | null) =>
   updateDoc(doc(itemsRef(gid), id), { [`checked.${taskId}`]: uid ?? deleteField() });

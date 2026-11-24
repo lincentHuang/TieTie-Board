@@ -32,6 +32,7 @@ import {
   moveItems,
   organizeItem,
   organizeItems,
+  rescheduleItems,
   removeEditRequest,
   requestEdit,
 } from '@/lib/repo';
@@ -475,7 +476,7 @@ export function BoardScreen({
           color: C.ok,
           onPress: () => ackMany(unacked(selection)),
         },
-        { icon: 'pricetags', label: '整理', color: C.mint, onPress: () => setOrganizingIds(selection.map((i) => i.id)) },
+        { icon: 'options', label: '一起改', color: C.mint, onPress: () => setOrganizingIds(selection.map((i) => i.id)) },
         free && { icon: 'layers', label: '最上層', color: C.lavender, onPress: () => bringToFront(selection) },
         selection.some(canDelete) && { icon: 'trash', label: '刪除', color: C.urgent, onPress: () => removeMany(selection) },
         done,
@@ -672,18 +673,21 @@ export function BoardScreen({
           }}
         />
       ) : null}
-      {organizing.length === 1 ? (
+      {/* 多選模式下就算只選一個也用「一起改」（有時間可以改） */}
+      {organizing.length === 1 && !multi ? (
         <OrganizeSheet
           item={organizing[0]}
           suggestions={allTags}
           onChange={(patch) => organizeItem(gid, organizing[0].id, patch).catch((e) => showError('整理失敗', e))}
           onClose={() => setOrganizingIds(null)}
         />
-      ) : organizing.length > 1 ? (
+      ) : organizing.length > 0 ? (
         <OrganizeManySheet
           items={organizing}
           suggestions={allTags}
+          canEdit={canEdit}
           onChange={(patches) => organizeItems(gid, patches).catch((e) => showError('整理失敗', e))}
+          onReschedule={(changes) => rescheduleItems(gid, changes).catch((e) => showError('改時間失敗', e))}
           onClose={() => setOrganizingIds(null)}
         />
       ) : null}

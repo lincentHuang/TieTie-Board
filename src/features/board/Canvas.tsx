@@ -673,12 +673,13 @@ export function Canvas({
           archive={archive}
           archivedCount={archivedCount}
           onToggleArchive={toggleArchive}
+          compact={size.w < 440}
         />
       ) : null}
 
       <ModeBar
         mode={queued ? 'queue' : 'free'}
-        compact={queued && size.w < 440}
+        compact={size.w < 440}
         // 再點一次目前的模式：排隊回到這頁開頭、自由擺放看全部
         onChange={(m) => (m === (queued ? 'queue' : 'free') ? fitAll() : onChangeMode(m))}
       />

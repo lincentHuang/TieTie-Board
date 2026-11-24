@@ -9,7 +9,7 @@ const MODES: { mode: ViewMode; icon: IconName; label: string; hint: string }[] =
   { mode: 'free', icon: 'hand-left', label: '自由', hint: '自由擺放：大家看到一樣的排版' },
 ];
 
-/** 左上角切換怎麼看白板（只影響自己的畫面）；再點一次目前的模式 = 回到開頭 / 看全部；compact = 手機上右邊還有分頁，沒選的只放圖示 */
+/** 左上角切換怎麼看白板（只影響自己的畫面）；再點一次目前的模式 = 回到開頭 / 看全部；compact = 手機上畫面窄，只放圖示（說明在 accessibilityLabel） */
 export function ModeBar({
   mode,
   compact = false,
@@ -30,9 +30,9 @@ export function ModeBar({
             accessibilityRole="radio"
             accessibilityLabel={m.hint}
             accessibilityState={{ selected: active }}
-            style={({ pressed }) => [s.btn, active && s.btnOn, pressed && { opacity: 0.6 }]}>
+            style={({ pressed }) => [s.btn, compact && s.btnCompact, active && s.btnOn, pressed && { opacity: 0.6 }]}>
             <Ionicons name={m.icon} size={16} color={active ? '#FFF' : C.sub} />
-            {active || !compact ? <Text style={[s.text, active && { color: '#FFF' }]}>{m.label}</Text> : null}
+            {!compact ? <Text style={[s.text, active && { color: '#FFF' }]}>{m.label}</Text> : null}
           </Pressable>
         );
       })}
@@ -59,6 +59,7 @@ const s = themed(() => ({
     elevation: 3,
   },
   btn: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 9, borderRadius: 14 },
+  btnCompact: { paddingHorizontal: 8 },
   btnOn: { backgroundColor: C.primary },
   text: { fontSize: 13, fontFamily: F.display, color: C.sub },
 }));
