@@ -137,6 +137,14 @@
         "projectId": "dc8f4c7b-ab68-44fd-8b0d-c4a2b14b4fa9"
       }
     },
-    "owner": "lincenthuang"
+    "owner": "lincenthuang",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/dc8f4c7b-ab68-44fd-8b0d-c4a2b14b4fa9",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }

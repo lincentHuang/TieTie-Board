@@ -30,6 +30,7 @@
     "expo-symbols": "~57.0.3",
     "expo-system-ui": "~57.0.4",
     "expo-task-manager": "~57.0.21",
+    "expo-updates": "~57.0.29",
     "expo-web-browser": "~57.0.3",
     "expo-widgets": "~57.0.21",
     "firebase": "^12.19.0",
@@ -63,7 +64,8 @@
     "emulators": "JAVA_HOME=\"${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}\" npx firebase-tools@latest emulators:start --only auth,firestore --project demo-bulletin",
     "dev:web": "sh -c 'set -a; . ./.env.emulator; set +a; expo start --web --port ${PORT:-8081}'",
     "typecheck": "tsc --noEmit",
-    "deploy:rules": "npx firebase-tools@latest deploy --only firestore:rules --project tietie-board"
+    "deploy:rules": "npx firebase-tools@latest deploy --only firestore:rules --project tietie-board",
+    "ota": "npx eas-cli@latest update --channel preview --environment preview --platform android"
   },
   "private": true,
   "expo": {
