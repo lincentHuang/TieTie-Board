@@ -19,7 +19,11 @@ async function shownPick(widget: NonNullable<typeof BoardWidget>, now: number): 
     if (!isRecord(props) || !Array.isArray(props.pages) || typeof props.index !== 'number') return null;
     const page: unknown = props.pages[props.index];
     if (!isRecord(page) || typeof page.gid !== 'string') return null;
-    return { gid: page.gid, at: typeof props.pickedAt === 'number' ? props.pickedAt : 0 };
+    return {
+      gid: page.gid,
+      at: typeof props.pickedAt === 'number' ? props.pickedAt : 0,
+      offset: typeof props.offset === 'number' ? props.offset : 0,
+    };
   } catch {
     return null;
   }

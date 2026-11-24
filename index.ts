@@ -9,7 +9,10 @@ registerPushRefresh();
 
 // Android 桌面小工具在背景更新時，需要一個不依賴畫面的 JS 任務
 if (Platform.OS === 'android') {
-  const { registerWidgetTaskHandler } = require('react-native-android-widget');
+  const { registerWidgetConfigurationScreen, registerWidgetTaskHandler } = require('react-native-android-widget');
   const { widgetTaskHandler } = require('./src/features/widgets/android/task-handler');
+  const { WidgetConfigScreen } = require('./src/features/widgets/android/WidgetConfigScreen');
   registerWidgetTaskHandler(widgetTaskHandler);
+  // 小工具放到桌面（或長按 →「設定」）時，選要看哪個公布欄
+  registerWidgetConfigurationScreen(WidgetConfigScreen);
 }

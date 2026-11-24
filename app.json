@@ -58,7 +58,7 @@
             {
               "name": "BoardWidget",
               "displayName": "貼貼公布欄",
-              "description": "切換瀏覽每個公布欄的公告、活動，家人發快速通報時馬上變色提醒",
+              "description": "列出每個公布欄還沒確認的公告，左右翻頁看更多；家人發快速通報時馬上變色提醒",
               "ios": {
                 "supportedFamilies": [
                   "systemSmall",
@@ -68,7 +68,56 @@
                   "accessoryRectangular",
                   "accessoryInline",
                   "accessoryCircular"
-                ]
+                ],
+                "configuration": {
+                  "title": "選公布欄",
+                  "description": "選這個小工具要看哪個公布欄；順序跟 App 裡「我的公布欄」清單一樣",
+                  "parameters": {
+                    "board": {
+                      "title": "公布欄",
+                      "type": "enum",
+                      "values": [
+                        {
+                          "name": "全部公布欄（用 ‹ › 切換）",
+                          "value": "all"
+                        },
+                        {
+                          "name": "第 1 個公布欄",
+                          "value": "b1"
+                        },
+                        {
+                          "name": "第 2 個公布欄",
+                          "value": "b2"
+                        },
+                        {
+                          "name": "第 3 個公布欄",
+                          "value": "b3"
+                        },
+                        {
+                          "name": "第 4 個公布欄",
+                          "value": "b4"
+                        },
+                        {
+                          "name": "第 5 個公布欄",
+                          "value": "b5"
+                        },
+                        {
+                          "name": "第 6 個公布欄",
+                          "value": "b6"
+                        },
+                        {
+                          "name": "第 7 個公布欄",
+                          "value": "b7"
+                        },
+                        {
+                          "name": "第 8 個公布欄",
+                          "value": "b8"
+                        }
+                      ],
+                      "default": "all"
+                    }
+                  }
+                }
               }
             }
           ]
@@ -81,12 +130,13 @@
             {
               "name": "BoardWidget",
               "label": "貼貼公布欄",
-              "description": "切換瀏覽每個公布欄的公告、活動，家人發快速通報時馬上變色提醒",
+              "description": "列出每個公布欄還沒確認的公告，左右翻頁看更多；家人發快速通報時馬上變色提醒",
               "minWidth": "250dp",
               "minHeight": "180dp",
               "targetCellWidth": 4,
               "targetCellHeight": 3,
               "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable",
               "updatePeriodMillis": 1800000
             }
           ]

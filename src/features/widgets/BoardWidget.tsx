@@ -17,18 +17,28 @@ import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 
 import type { WidgetView } from './widget-data';
 
+/** 「編輯小工具」的選項（app.json 的 configuration.parameters）：'all' 或 'b1'…'b8' */
+interface BoardWidgetConfig {
+  board?: string;
+}
+
 /**
- * iOS 桌面 / 鎖定畫面小工具：每個公布欄一頁，用 ‹ › 或下面的分頁切換（iOS 17 以上）。
+ * iOS 桌面 / 鎖定畫面小工具：列出每個公布欄還沒確認的公告（已讀的不顯示），
+ * ‹ › 先翻同一個公布欄的下一批未讀，翻完換下一個公布欄（iOS 17 以上）。
  * 注意：'widget' 函式在獨立環境執行，不能使用外部變數、hooks 或 import 的函式，
- * 所有要顯示的文字都由 App 事先算好（見 ./widget-data.ts）。
+ * 所有要顯示的文字都由 App 事先算好（見 ./widget-data.ts），翻頁邏輯跟 stepView 一樣、要一起改。
  * 按鈕的 onPress 也在小工具裡執行，回傳的值會直接成為新的 props，不需要打開 App。
  */
-const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
+const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig>) => {
   'widget';
   const family = env.widgetFamily;
-  const pages = props.pages ?? [];
+  const all = props.pages ?? [];
+  // 長按小工具 →「編輯小工具」選了第幾個公布欄（'b3' = 第 3 個）：只看那一個，‹ › 只翻它的未讀
+  const pinNo = Number(String(env.configuration?.board ?? 'all').slice(1));
+  const pinned = pinNo >= 1 && pinNo <= all.length ? all[pinNo - 1] : null;
+  const pages = pinned ? [pinned] : all;
   const count = pages.length;
-  const index = props.index >= 0 && props.index < count ? props.index : 0;
+  const index = pinned ? 0 : props.index >= 0 && props.index < count ? props.index : 0;
   const page = pages[index];
   const white = '#FFFFFF';
 
@@ -40,20 +50,18 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
     );
   }
 
+  const unread = page.unread ?? [];
+  const n = unread.length;
+  const first = unread[0];
   const alerting = page.alertText !== '';
   const focusColors = { urgent: '#FF5A6E', important: '#FF9F43', none: '#9A7FE0' };
-  const bg = alerting ? (page.alertUrgent ? '#FF3B5C' : '#FF6FA3') : (focusColors[page.focusPriority] ?? focusColors.none);
-  const hasDue = page.focusDueAt > 0;
-  const dueDate = new Date(page.focusDueAt);
+  const bg = alerting ? (page.alertUrgent ? '#FF3B5C' : '#FF6FA3') : (focusColors[page.topPriority] ?? focusColors.none);
   const alertLine = `${page.alertEmoji} ${page.alertText}`;
-  /** 切換公布欄：記下切換的時間，比它更舊的通報就不會再把畫面搶走 */
-  const go = (step: number) => ({ index: (index + step + count) % count, pickedAt: Date.now() });
-  const pick = (i: number) => ({ index: i, pickedAt: Date.now() });
 
   if (family === 'accessoryInline') {
     return (
       <Text modifiers={[widgetURL(page.url)]}>
-        {alerting ? `📣 ${page.alertBy}：${page.alertText}` : page.pendingCount > 0 ? `⚠︎ ${page.focusTitle}` : page.focusTitle}
+        {alerting ? `📣 ${page.alertBy}：${page.alertText}` : first ? `⚠︎ ${first.title}` : '✓ 公告都看過了'}
       </Text>
     );
   }
@@ -61,13 +69,11 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
   if (family === 'accessoryCircular') {
     return (
       <VStack spacing={0} modifiers={[widgetURL(page.url)]}>
-        <Image systemName={alerting || page.pendingCount > 0 ? 'megaphone.fill' : 'calendar'} size={18} />
+        <Image systemName={alerting || n > 0 ? 'megaphone.fill' : 'checkmark'} size={18} />
         {alerting ? (
           <Text modifiers={[font({ size: 16, weight: 'bold' })]}>!</Text>
-        ) : page.pendingCount > 0 ? (
-          <Text modifiers={[font({ size: 16, weight: 'bold' })]}>{page.pendingCount}</Text>
-        ) : hasDue ? (
-          <Text modifiers={[font({ size: 11 })]} date={dueDate} dateStyle="time" />
+        ) : n > 0 ? (
+          <Text modifiers={[font({ size: 16, weight: 'bold' })]}>{page.unreadCount}</Text>
         ) : null}
       </VStack>
     );
@@ -80,12 +86,19 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
         spacing={1}
         modifiers={[frame({ maxWidth: 1000, alignment: 'leading' }), widgetURL(page.url)]}>
         <Text modifiers={[font({ size: 12, weight: 'bold' }), lineLimit(1)]}>
-          {alerting ? `📣 ${page.alertBy}・${page.groupName}` : page.focusBadge}
+          {alerting ? `📣 ${page.alertBy}・${page.groupName}` : n > 0 ? `⚠︎ ${page.unreadCount} 則未讀・${page.groupName}` : page.groupName}
         </Text>
-        <Text modifiers={[font({ size: 16, weight: 'heavy' }), lineLimit(2)]}>
-          {alerting ? alertLine : page.focusTitle}
-        </Text>
-        {!alerting && hasDue ? <Text modifiers={[font({ size: 12 }), lineLimit(1)]}>{page.focusWhen}</Text> : null}
+        {alerting ? (
+          <Text modifiers={[font({ size: 15, weight: 'heavy' }), lineLimit(2)]}>{alertLine}</Text>
+        ) : n > 0 ? (
+          unread.slice(0, 2).map((r, i) => (
+            <Text key={i} modifiers={[font({ size: 14, weight: 'semibold' }), lineLimit(1)]}>
+              {`• ${r.title}`}
+            </Text>
+          ))
+        ) : (
+          <Text modifiers={[font({ size: 15, weight: 'heavy' })]}>✓ 公告都看過了</Text>
+        )}
       </VStack>
     );
   }
@@ -94,10 +107,34 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
   const medium = family === 'systemMedium';
   const xl = family === 'systemExtraLarge';
   const large = !small && !medium;
-  const titleSize = small ? 22 : medium ? 28 : xl ? 60 : 40;
-  // 小、中尺寸空間有限：通報中就整個換成通報內容
-  const showFocus = !alerting || large;
-  const upcoming = small || medium || alerting ? [] : page.upcoming.slice(0, xl ? 4 : 3);
+  // 一頁放幾則未讀：通報中要讓出位置
+  const size = small ? (alerting ? 1 : 3) : medium ? (alerting ? 1 : 3) : alerting ? (xl ? 6 : 5) : xl ? 9 : 7;
+  const rawOffset = pinned ? (props.pinGid === pinned.gid ? (props.pinOffset ?? 0) : 0) : (props.offset ?? 0);
+  const offset = Math.max(0, Math.min(rawOffset, n - 1));
+  const start = Math.floor(offset / size) * size;
+  const rows = unread.slice(start, start + size);
+  const chunks = Math.ceil(n / size);
+  const showArrows = count > 1 || n > size;
+  const rowSize = small ? 13 : xl ? 20 : 15;
+
+  /**
+   * 按 ‹ ›：先翻這個公布欄的下一批未讀，翻完換公布欄；記下切換時間，比它舊的通報就不會再把畫面搶走。
+   * 固定看某個公布欄的小工具另外記翻到哪（pinGid / pinOffset），不動到「全部」小工具停的位置。
+   */
+  const go = (step: number) => {
+    let to = index;
+    let off = 0;
+    if (step > 0 && start + size < n) off = start + size;
+    else if (step < 0 && start > 0) off = start - size;
+    else if (count < 2) off = step > 0 ? 0 : Math.floor((n - 1) / size) * size;
+    else {
+      to = (index + step + count) % count;
+      const m = (pages[to].unread ?? []).length;
+      off = step > 0 || m === 0 ? 0 : Math.floor((m - 1) / size) * size;
+    }
+    return pinned ? { pinGid: page.gid, pinOffset: off } : { index: to, offset: off, pickedAt: Date.now() };
+  };
+  const pick = (i: number) => ({ index: i, offset: 0, pickedAt: Date.now() });
   const tabs = large && count > 1 ? pages.slice(0, xl ? 6 : 4) : [];
 
   const arrow = (step: number, target: string) => (
@@ -110,6 +147,14 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
     </Button>
   );
 
+  const sub = [
+    n > 0 ? `${page.unreadCount} 則未讀` : '',
+    chunks > 1 ? `${Math.floor(start / size) + 1}/${chunks}` : '',
+    !small && count > 1 ? `公布欄 ${index + 1}/${count}` : '',
+  ]
+    .filter((t) => t !== '')
+    .join('・');
+
   return (
     <VStack
       alignment="leading"
@@ -119,25 +164,20 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
         containerBackground(bg, 'widget'),
         widgetURL(page.url),
       ]}>
-      {/* 頂部：公布欄名稱、切換、通報 */}
+      {/* 頂部：公布欄名稱、未讀數、翻頁、通報 */}
       <HStack spacing={6}>
-        {!small && count > 1 ? arrow(-1, 'prev') : null}
-        <Text
-          modifiers={[font({ size: small ? 12 : 14, weight: 'bold' }), foregroundStyle(white), lineLimit(1)]}>
-          {page.groupName}
-        </Text>
-        {count > 1 ? (
-          <Text modifiers={[font({ size: small ? 11 : 12 }), foregroundStyle(white), opacity(0.7)]}>
-            {`${index + 1}/${count}`}
+        <VStack alignment="leading" spacing={0}>
+          <Text modifiers={[font({ size: small ? 12 : 14, weight: 'bold' }), foregroundStyle(white), lineLimit(1)]}>
+            {page.groupName}
           </Text>
-        ) : null}
-        {!small && count > 1 ? arrow(1, 'next') : null}
+          {sub !== '' ? (
+            <Text modifiers={[font({ size: 11 }), foregroundStyle(white), opacity(0.75), lineLimit(1)]}>{sub}</Text>
+          ) : null}
+        </VStack>
         <Spacer />
-        {small ? (
-          count > 1 ? (
-            arrow(1, 'next')
-          ) : null
-        ) : (
+        {showArrows ? arrow(-1, 'prev') : null}
+        {showArrows ? arrow(1, 'next') : null}
+        {small ? null : (
           <Link destination={page.alertUrl}>
             <Text
               modifiers={[
@@ -157,15 +197,11 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
         <VStack
           alignment="leading"
           spacing={2}
-          modifiers={
-            large
-              ? [
-                  frame({ maxWidth: 10000, alignment: 'leading' }),
-                  padding({ all: 10 }),
-                  background('#FFFFFF2E', shapes.roundedRectangle({ cornerRadius: 16 })),
-                ]
-              : []
-          }>
+          modifiers={[
+            frame({ maxWidth: 10000, alignment: 'leading' }),
+            padding({ all: small ? 6 : 10 }),
+            background('#FFFFFF2E', shapes.roundedRectangle({ cornerRadius: small ? 12 : 16 })),
+          ]}>
           <HStack spacing={4}>
             <Text modifiers={[font({ size: small ? 11 : 13, weight: 'bold' }), foregroundStyle(white), lineLimit(1)]}>
               {`📣 ${page.alertBy} 通報`}
@@ -178,80 +214,60 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
           </HStack>
           <Text
             modifiers={[
-              font({ size: large ? (xl ? 34 : 24) : titleSize, weight: 'black' }),
+              font({ size: small ? 15 : xl ? 30 : large ? 22 : 18, weight: 'black' }),
               foregroundStyle(white),
-              minimumScaleFactor(0.4),
-              lineLimit(small ? 4 : 2),
+              minimumScaleFactor(0.5),
+              lineLimit(2),
             ]}>
             {alertLine}
           </Text>
         </VStack>
       ) : null}
 
-      <Spacer minLength={0} />
-
-      {showFocus ? (
-        <VStack alignment="leading" spacing={small ? 2 : 4}>
+      {/* 未讀清單 */}
+      {n === 0 ? (
+        <VStack alignment="leading" spacing={2}>
+          <Spacer minLength={0} />
           <Text
             modifiers={[
-              font({ size: small ? 11 : 13, weight: 'bold' }),
+              font({ size: small ? 20 : xl ? 40 : 26, weight: 'black' }),
               foregroundStyle(white),
-              opacity(0.85),
-              lineLimit(1),
+              minimumScaleFactor(0.5),
             ]}>
-            {page.focusBadge}
+            ✓ 公告都看過了
           </Text>
-          <Text
-            modifiers={[
-              font({ size: alerting ? 24 : titleSize, weight: 'black' }),
-              foregroundStyle(white),
-              minimumScaleFactor(0.4),
-              lineLimit(small ? 4 : alerting ? 2 : 3),
-            ]}>
-            {page.focusTitle}
-          </Text>
-          {hasDue ? (
-            <HStack spacing={6}>
-              <Text
-                modifiers={[font({ size: small ? 13 : 17, weight: 'semibold' }), foregroundStyle(white)]}>
-                {page.focusWhen}
-              </Text>
-              {small ? null : (
-                <Text
-                  date={dueDate}
-                  dateStyle="relative"
-                  modifiers={[font({ size: 15 }), foregroundStyle(white), opacity(0.8), lineLimit(1)]}
-                />
-              )}
-            </HStack>
-          ) : null}
         </VStack>
-      ) : null}
-
-      <Spacer minLength={0} />
-
-      {upcoming.length > 0 ? (
-        <VStack alignment="leading" spacing={3}>
-          <Text modifiers={[font({ size: 12, weight: 'bold' }), foregroundStyle(white), opacity(0.7)]}>接下來</Text>
-          {upcoming.map((u, i) => (
-            <HStack key={i} spacing={8}>
+      ) : (
+        <VStack alignment="leading" spacing={small ? 3 : 6}>
+          {rows.map((r, i) => (
+            <HStack key={start + i} spacing={6}>
+              <Image
+                systemName={r.priority === 'urgent' ? 'exclamationmark.circle.fill' : 'circle.fill'}
+                size={r.priority === 'urgent' ? rowSize : rowSize - 6}
+                color={r.priority === 'urgent' ? '#FFE0E0' : white}
+              />
               <Text
                 modifiers={[
-                  font({ size: xl ? 18 : 14, weight: 'semibold' }),
-                  foregroundStyle(u.urgent ? '#FFD6D6' : white),
-                  lineLimit(1),
+                  font({ size: rowSize, weight: 'bold' }),
+                  foregroundStyle(white),
+                  lineLimit(small ? 2 : 1),
                 ]}>
-                {u.when}
+                {r.title}
               </Text>
-              <Text modifiers={[font({ size: xl ? 18 : 14 }), foregroundStyle(white), lineLimit(1)]}>
-                {u.title}
-              </Text>
+              <Spacer minLength={4} />
+              {!small && r.when !== '' ? (
+                <Text modifiers={[font({ size: rowSize - 2 }), foregroundStyle(white), opacity(0.8), lineLimit(1)]}>
+                  {r.when}
+                </Text>
+              ) : null}
             </HStack>
           ))}
         </VStack>
-      ) : null}
+      )}
 
-      {/* 大尺寸：每個公布欄一個分頁，有通報 / 未確認的會標出來 */}
+      <Spacer minLength={0} />
+
+      {/* 大尺寸：每個公布欄一個分頁，有通報 / 未讀的會標出來 */}
       {tabs.length > 0 ? (
         <HStack spacing={6}>
           {tabs.map((p, i) => (
@@ -264,7 +280,7 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
                   padding({ horizontal: 10, vertical: 5 }),
                   background(i === index ? white : '#FFFFFF33', shapes.capsule()),
                 ]}>
-                {p.alertText ? `📣 ${p.groupName}` : p.pendingCount > 0 ? `${p.groupName}・${p.pendingCount}` : p.groupName}
+                {p.alertText ? `📣 ${p.groupName}` : p.unreadCount > 0 ? `${p.groupName}・${p.unreadCount}` : p.groupName}
               </Text>
             </Button>
           ))}
@@ -274,4 +290,4 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment) => {
   );
 };
 
-export default createWidget<WidgetView>('BoardWidget', BoardWidget);
+export default createWidget<WidgetView, BoardWidgetConfig>('BoardWidget', BoardWidget);

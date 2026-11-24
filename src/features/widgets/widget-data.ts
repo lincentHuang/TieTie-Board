@@ -1,4 +1,4 @@
-import { countdownLabel, nextMidnights, whenLabel } from '@/lib/dates';
+import { nextMidnights, whenLabel } from '@/lib/dates';
 import {
   ALERT_TTL,
   byUrgency,
@@ -32,9 +32,23 @@ export interface WidgetSource {
 export interface BoardPick {
   gid: string;
   at: number;
+  /** 翻到這個公布欄未讀清單的第幾則（從 0 開始）；沒有就是第一頁 */
+  offset?: number;
 }
 
-/** 某個公布欄在某個時間點的畫面 */
+/** 一則還沒確認（未讀）的公告 */
+export interface UnreadRow {
+  title: string;
+  priority: Priority;
+  /** 活動時間文字；沒有日期是空字串 */
+  when: string;
+  author: string;
+}
+
+/** 小工具最多帶幾則未讀（太多的話打開 App 看） */
+export const MAX_UNREAD = 30;
+
+/** 某個公布欄在某個時間點的畫面：只列還沒確認的公告（已讀的不顯示） */
 export interface WidgetPage {
   gid: string;
   groupName: string;
@@ -42,15 +56,12 @@ export interface WidgetPage {
   url: string;
   /** 點「通報」：打開 App 的快速通報面板 */
   alertUrl: string;
-  pendingCount: number;
-  focusTitle: string;
-  focusPriority: Priority;
-  focusWhen: string;
-  /** 倒數的目標時間（毫秒），iOS 會用系統的自動倒數文字 */
-  focusDueAt: number;
-  focusCountdown: string;
-  focusBadge: string;
-  upcoming: { when: string; title: string; urgent: boolean }[];
+  /** 未讀公告，最需要注意的在前（最多 MAX_UNREAD 則） */
+  unread: UnreadRow[];
+  /** 未讀總數（可能比 unread 多） */
+  unreadCount: number;
+  /** 決定底色：最前面那則未讀的重要程度；都讀完是 none */
+  topPriority: Priority;
   /** 正在通報中的內容；沒有通報時是空字串 */
   alertText: string;
   alertEmoji: string;
@@ -59,12 +70,16 @@ export interface WidgetPage {
   alertUrgent: boolean;
 }
 
-/** 某個時間點小工具要顯示的內容：每個公布欄一頁，index 是目前顯示的那頁 */
+/** 某個時間點小工具要顯示的內容：每個公布欄一頁，index 是目前顯示的那頁，offset 是翻到第幾則未讀 */
 export interface WidgetView {
   pages: WidgetPage[];
   index: number;
-  /** 使用者在小工具上切換的時間（0 = 沒切換過）；iOS 小工具按 ‹ › 時會改這兩個值 */
+  offset: number;
+  /** 使用者在小工具上切換的時間（0 = 沒切換過）；iOS 小工具按 ‹ › 時會改這幾個值 */
   pickedAt: number;
+  /** iOS「編輯小工具」固定看某個公布欄時，翻到那個公布欄的第幾則（App 重寫時間軸會回到第一頁） */
+  pinGid?: string;
+  pinOffset?: number;
 }
 
 /** 活動開始後還會在小工具上留多久 */
@@ -128,39 +143,22 @@ export function buildWidgetSource(digests: BoardDigest[], uid: string): WidgetSo
 }
 
 function pageAt(board: BoardSource, now: number): WidgetPage {
-  const events = board.events.filter((e) => e.dueAt + KEEP_AFTER_START > now);
+  // 有日期的公告，活動開始一段時間後就不再提醒
   const pending = board.pending.filter((p) => p.dueAt === null || p.dueAt + KEEP_AFTER_START > now);
   const alert = board.alerts.find((a) => now - a.at < ALERT_TTL);
-  const top = pending[0];
-  const next = events[0];
-
-  let focus: { title: string; priority: Priority; dueAt: number | null } | undefined;
-  let focusBadge = '';
-  if (top) {
-    focus = top;
-    const label = top.priority === 'urgent' ? '緊急' : '重要';
-    focusBadge = pending.length > 1 ? `⚠︎ ${label}・還有 ${pending.length} 則未確認` : `⚠︎ ${label}・你還沒確認`;
-  } else if (next) {
-    focus = next;
-    focusBadge = '📅 下一件事';
-  }
-
   return {
     gid: board.gid,
     groupName: board.groupName,
     url: boardUrl(board.gid),
     alertUrl: boardUrl(board.gid, true),
-    pendingCount: pending.length,
-    focusTitle: focus?.title ?? '目前沒有重要的事',
-    focusPriority: focus?.priority ?? 'none',
-    focusWhen: focus?.dueAt ? whenLabel(focus.dueAt, now) : '',
-    focusDueAt: focus?.dueAt ?? 0,
-    focusCountdown: focus?.dueAt ? countdownLabel(focus.dueAt, now) : '',
-    focusBadge: focusBadge || '✓ 都看過了',
-    upcoming: events
-      .filter((e) => e.title !== focus?.title || e.dueAt !== focus?.dueAt)
-      .slice(0, 4)
-      .map((e) => ({ when: whenLabel(e.dueAt, now), title: e.title, urgent: e.priority === 'urgent' })),
+    unread: pending.slice(0, MAX_UNREAD).map((p) => ({
+      title: p.title,
+      priority: p.priority,
+      when: p.dueAt ? whenLabel(p.dueAt, now) : '',
+      author: p.author,
+    })),
+    unreadCount: pending.length,
+    topPriority: pending[0]?.priority ?? 'none',
     alertText: alert?.text ?? '',
     alertEmoji: alert?.emoji ?? '',
     alertBy: alert?.author ?? '',
@@ -169,16 +167,55 @@ function pageAt(board: BoardSource, now: number): WidgetPage {
   };
 }
 
+/**
+ * 小工具固定只看某個公布欄時：只留那一個公布欄的資料（‹ › 只翻它的未讀、不會被別的公布欄的通報搶走）。
+ * 找不到（例如已經退出那個公布欄）就照舊顯示全部。
+ */
+export function pinSource(src: WidgetSource, gid: string | null): WidgetSource {
+  const board = gid ? src.boards.find((b) => b.gid === gid) : undefined;
+  return board ? { boards: [board] } : src;
+}
+
 export function viewAt(src: WidgetSource, now: number, pick: BoardPick | null): WidgetView {
   const pages = src.boards.map((b) => pageAt(b, now));
   let index = pick ? pages.findIndex((p) => p.gid === pick.gid) : -1;
+  let offset = index >= 0 ? (pick?.offset ?? 0) : 0;
   // 有人剛發快速通報（比使用者上次切換還新）→ 小工具自動切到那個公布欄
   let newest = -1;
   pages.forEach((p, i) => {
     if (p.alertText && (newest < 0 || p.alertAt > pages[newest].alertAt)) newest = i;
   });
-  if (newest >= 0 && pages[newest].alertAt > (pick?.at ?? 0)) index = newest;
-  return { pages, index: Math.max(0, index), pickedAt: pick?.at ?? 0 };
+  if (newest >= 0 && pages[newest].alertAt > (pick?.at ?? 0)) {
+    if (newest !== index) offset = 0;
+    index = newest;
+  }
+  index = Math.max(0, index);
+  // 確認了幾則之後清單變短：翻過頭就回到最後一則所在的位置
+  const n = pages[index]?.unread.length ?? 0;
+  offset = Math.max(0, Math.min(offset, n - 1));
+  return { pages, index, offset, pickedAt: pick?.at ?? 0 };
+}
+
+/**
+ * 按 ‹ › 之後要停在哪：先翻同一個公布欄的下一批未讀，翻完才換下一個公布欄。
+ * size = 一頁放幾則（依小工具大小）。iOS 小工具不能 import 函式，BoardWidget.tsx 裡有一份一樣的邏輯。
+ */
+export function stepView(view: WidgetView, step: 1 | -1, size: number): { gid: string; offset: number } | null {
+  const count = view.pages.length;
+  const page = view.pages[view.index];
+  if (!page) return null;
+  const n = page.unread.length;
+  const start = Math.floor(view.offset / size) * size;
+  if (step > 0 && start + size < n) return { gid: page.gid, offset: start + size };
+  if (step < 0 && start > 0) return { gid: page.gid, offset: start - size };
+  if (count < 2) {
+    // 只有一個公布欄：繞回第一頁 / 最後一頁
+    if (n <= size) return null;
+    return { gid: page.gid, offset: step > 0 ? 0 : Math.floor((n - 1) / size) * size };
+  }
+  const other = view.pages[(view.index + step + count) % count];
+  const m = other.unread.length;
+  return { gid: other.gid, offset: step > 0 || m === 0 ? 0 : Math.floor((m - 1) / size) * size };
 }
 
 /**
@@ -207,4 +244,4 @@ export const FOCUS_COLORS: Record<Priority, string> = {
 export const ALERT_COLORS = { normal: '#FF6FA3', urgent: '#FF3B5C' };
 
 export const pageColor = (page: WidgetPage) =>
-  page.alertText ? ALERT_COLORS[page.alertUrgent ? 'urgent' : 'normal'] : FOCUS_COLORS[page.focusPriority];
+  page.alertText ? ALERT_COLORS[page.alertUrgent ? 'urgent' : 'normal'] : FOCUS_COLORS[page.topPriority];

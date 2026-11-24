@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Platform, Text, View } from 'react-native';
 
 import { showError } from '@/components/dialogs';
 import { Sheet } from '@/components/Sheet';
@@ -28,7 +28,7 @@ export function BoardSwitcherSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet visible title="我的公布欄" onClose={onClose}>
       <View style={s.list}>
-        {session.groupIds.map((gid) => {
+        {session.groupIds.map((gid, i) => {
           const current = gid === session.groupId;
           const name = names[gid];
           return (
@@ -44,7 +44,11 @@ export function BoardSwitcherSheet({ onClose }: { onClose: () => void }) {
                 <Text style={s.name} numberOfLines={1}>
                   {name ?? '讀取中…'}
                 </Text>
-                <Text style={s.code}>邀請碼 {gid}</Text>
+                <Text style={s.code}>
+                  邀請碼 {gid}
+                  {/* iOS 小工具「編輯小工具」是用第幾個來選公布欄 */}
+                  {Platform.OS === 'ios' && i < 8 ? `・小工具「第 ${i + 1} 個」` : ''}
+                </Text>
               </View>
               {current ? (
                 <View style={s.currentChip}>

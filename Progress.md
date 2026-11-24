@@ -27,3 +27,8 @@
 - 2026-11-24：多選的「整理」改名「一起改」，除了狀態、標籤，也能把選的項目一起設成同一個時間或拿掉時間（有結束時間的保留原本長度；只改自己能編輯的，別人貼的會提示略過）；多選只選一個時也用這個面板（src/features/board/Organize.tsx、BoardScreen.tsx、src/lib/repo.ts 的 rescheduleItems）
 - 2026-11-24：手機版（寬度 < 440）白板左上「排隊／自由」與右上「公告／記事」分頁只留圖示和數字，不再擠在一起（src/features/board/ModeBar.tsx、QueueTabs.tsx、Canvas.tsx）
 - 2026-11-24：推上 main（bdf5dfa），EAS 建置 Android APK versionCode 10（含桌面小工具）並發布 GitHub Release android-v1.0.0-10；versionCode 9 是舊程式碼的建置，已取消
+- 2026-11-24：桌面小工具（iOS／Android）只列未讀公告清單，‹ › 翻頁看更多、翻完換公布欄，已讀不顯示（src/features/widgets/widget-data.ts、BoardWidget.tsx、android/BoardAndroidWidget.tsx、android/task-handler.tsx）
+- 2026-11-24：桌面小工具可以選要看哪個公布欄：iOS 長按「編輯小工具」選「全部／第 N 個公布欄」，Android 放到桌面（或長按 → 設定）時跳出公布欄清單選；固定後只看那個公布欄、‹ › 只翻它的未讀（app.json、index.ts、src/features/widgets/BoardWidget.tsx、widget-data.ts、widget-sync.android.ts、android/WidgetConfigScreen.tsx、android/storage.ts、android/task-handler.tsx、src/features/setup/BoardSwitcherSheet.tsx）
+- 2026-11-24：加入 App 自動更新（EAS Update）：開 App 與切回 App（最多 30 分鐘一次）自動檢查並背景下載，下載好底部提示「立即更新」，不按則下次開 App 套用；runtimeVersion 用 fingerprint，preview 建置用 channel preview，發布用 `npm run ota -- --message "..."`（app.json、eas.json、src/features/app-updates/、src/app/_layout.tsx）
+- 2026-11-24：Android 小工具加 ↻ 背景更新按鈕（防連按 30 秒），定時抓資料改成最多每 2 小時一次（src/features/widgets/android/task-handler.tsx、BoardAndroidWidget.tsx、storage.ts）
+- 2026-11-24：送出 EAS Android APK 建置 versionCode 11（含小工具選公布欄、expo-updates 的 preview channel），建置 bb7e4ed1
