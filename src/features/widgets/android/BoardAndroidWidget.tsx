@@ -16,6 +16,8 @@ type Hex = `#${string}`;
 const WHITE: Hex = '#FFFFFF';
 const DIM = 'rgba(255, 255, 255, 0.75)' as const;
 const CHIP = 'rgba(255, 255, 255, 0.22)' as const;
+/** 已讀的公告：文字淡一點，排在未讀後面 */
+const READ = 'rgba(255, 255, 255, 0.55)' as const;
 
 const isCompact = (width: number, height: number) => height < 150 || width < 200;
 const isBig = (width: number, height: number) => height > 320 && width > 300;
@@ -74,9 +76,9 @@ export function BoardAndroidWidget({
   const big = isBig(width, height);
   const alerting = page.alertText !== '';
   const size = rowsFit(page, width, height);
-  const n = page.unread.length;
+  const n = page.rows.length;
   const start = Math.floor(view.offset / size) * size;
-  const rows = page.unread.slice(start, start + size);
+  const rows = page.rows.slice(start, start + size);
   const chunks = Math.ceil(n / size);
   const showArrows = view.pages.length > 1 || n > size;
   const alertTime = new Date(page.alertAt);
@@ -143,11 +145,11 @@ export function BoardAndroidWidget({
         </FlexWidget>
       ) : null}
 
-      {/* 未讀清單 */}
+      {/* 公告：未讀的在上、已讀的在下（淡一點） */}
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'column', marginTop: 6 }}>
         {n === 0 ? (
           <TextWidget
-            text="✓ 公告都看過了"
+            text="✓ 沒有要看的公告"
             style={{ fontSize: compact ? 18 : big ? 26 : 22, fontWeight: '900', color: WHITE, marginTop: 4 }}
           />
         ) : (
@@ -156,18 +158,24 @@ export function BoardAndroidWidget({
               key={start + i}
               style={{ width: 'match_parent', height: rowHeight(width, height), flexDirection: 'row', alignItems: 'center' }}>
               <FlexWidget
-                style={{ width: 8, height: 8, borderRadius: 4, marginRight: 8, backgroundColor: r.priority === 'urgent' ? '#FFD6D6' : WHITE }}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  marginRight: 8,
+                  backgroundColor: r.read ? READ : r.priority === 'urgent' ? '#FFD6D6' : WHITE,
+                }}
               />
               <FlexWidget style={{ flex: 1 }}>
                 <TextWidget
                   text={r.title}
                   maxLines={1}
                   truncate="END"
-                  style={{ fontSize: compact ? 14 : big ? 18 : 16, fontWeight: 'bold', color: WHITE }}
+                  style={{ fontSize: compact ? 14 : big ? 18 : 16, fontWeight: r.read ? 'normal' : 'bold', color: r.read ? READ : WHITE }}
                 />
               </FlexWidget>
               {r.when ? (
-                <TextWidget text={r.when} maxLines={1} style={{ fontSize: compact ? 12 : 13, color: DIM, marginLeft: 6 }} />
+                <TextWidget text={r.when} maxLines={1} style={{ fontSize: compact ? 12 : 13, color: r.read ? READ : DIM, marginLeft: 6 }} />
               ) : null}
             </FlexWidget>
           ))

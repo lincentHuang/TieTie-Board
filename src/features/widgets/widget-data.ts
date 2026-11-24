@@ -4,6 +4,7 @@ import {
   byUrgency,
   isAckedBy,
   isAnnouncement,
+  isItemDone,
   itemTitle,
   type BoardDigest,
   type BoardItem,
@@ -14,7 +15,8 @@ import {
 export interface BoardSource {
   gid: string;
   groupName: string;
-  pending: { title: string; priority: Priority; dueAt: number | null; author: string }[];
+  /** 還沒完成（沒封存）的公告：未讀的在前；read 是我已經確認過（舊版存的資料沒有這個欄位 = 未讀） */
+  pending: { title: string; priority: Priority; dueAt: number | null; author: string; read?: boolean }[];
   events: { title: string; priority: Priority; dueAt: number }[];
   /** 要提醒我的快速通報：別人發的、我還沒按收到（新的在前） */
   alerts: { emoji: string; text: string; author: string; at: number; urgent: boolean }[];
@@ -36,19 +38,21 @@ export interface BoardPick {
   offset?: number;
 }
 
-/** 一則還沒確認（未讀）的公告 */
-export interface UnreadRow {
+/** 小工具上的一則公告 */
+export interface WidgetRow {
   title: string;
+  /** 我已經確認過了：排在未讀的後面、顏色淡一點 */
+  read: boolean;
   priority: Priority;
   /** 活動時間文字；沒有日期是空字串 */
   when: string;
   author: string;
 }
 
-/** 小工具最多帶幾則未讀（太多的話打開 App 看） */
-export const MAX_UNREAD = 30;
+/** 小工具最多帶幾則公告（太多的話打開 App 看） */
+export const MAX_ROWS = 30;
 
-/** 某個公布欄在某個時間點的畫面：只列還沒確認的公告（已讀的不顯示） */
+/** 某個公布欄在某個時間點的畫面：未讀的公告在上、已讀的在下，已完成（封存）的不顯示 */
 export interface WidgetPage {
   gid: string;
   groupName: string;
@@ -56,9 +60,9 @@ export interface WidgetPage {
   url: string;
   /** 點「通報」：打開 App 的快速通報面板 */
   alertUrl: string;
-  /** 未讀公告，最需要注意的在前（最多 MAX_UNREAD 則） */
-  unread: UnreadRow[];
-  /** 未讀總數（可能比 unread 多） */
+  /** 公告：未讀的在前（最需要注意的最前面），已讀的接在後面（最多 MAX_ROWS 則） */
+  rows: WidgetRow[];
+  /** 未讀總數 */
   unreadCount: number;
   /** 決定底色：最前面那則未讀的重要程度；都讀完是 none */
   topPriority: Priority;
@@ -70,7 +74,7 @@ export interface WidgetPage {
   alertUrgent: boolean;
 }
 
-/** 某個時間點小工具要顯示的內容：每個公布欄一頁，index 是目前顯示的那頁，offset 是翻到第幾則未讀 */
+/** 某個時間點小工具要顯示的內容：每個公布欄一頁，index 是目前顯示的那頁，offset 是翻到第幾則 */
 export interface WidgetView {
   pages: WidgetPage[];
   index: number;
@@ -128,9 +132,16 @@ export function buildWidgetSource(digests: BoardDigest[], uid: string): WidgetSo
       gid: d.gid,
       groupName: d.name,
       pending: d.items
-        .filter((i) => isAnnouncement(i) && !isAckedBy(i, uid))
+        // 完成的（狀態完成、或待辦全勾完）已經收進封存，不放上小工具；byUrgency 會把未讀的排在已讀前面
+        .filter((i) => isAnnouncement(i) && !isItemDone(i))
         .sort(byUrgency(uid))
-        .map((i) => ({ title: itemTitle(i), priority: i.priority, dueAt: i.dueAt, author: i.authorName })),
+        .map((i) => ({
+          title: itemTitle(i),
+          priority: i.priority,
+          dueAt: i.dueAt,
+          author: i.authorName,
+          read: isAckedBy(i, uid),
+        })),
       events: d.items
         .filter((i): i is BoardItem & { dueAt: number } => i.dueAt !== null)
         .sort((a, b) => a.dueAt - b.dueAt)
@@ -145,20 +156,22 @@ export function buildWidgetSource(digests: BoardDigest[], uid: string): WidgetSo
 function pageAt(board: BoardSource, now: number): WidgetPage {
   // 有日期的公告，活動開始一段時間後就不再提醒
   const pending = board.pending.filter((p) => p.dueAt === null || p.dueAt + KEEP_AFTER_START > now);
+  const unread = pending.filter((p) => p.read !== true);
   const alert = board.alerts.find((a) => now - a.at < ALERT_TTL);
   return {
     gid: board.gid,
     groupName: board.groupName,
     url: boardUrl(board.gid),
     alertUrl: boardUrl(board.gid, true),
-    unread: pending.slice(0, MAX_UNREAD).map((p) => ({
+    rows: pending.slice(0, MAX_ROWS).map((p) => ({
       title: p.title,
+      read: p.read === true,
       priority: p.priority,
       when: p.dueAt ? whenLabel(p.dueAt, now) : '',
       author: p.author,
     })),
-    unreadCount: pending.length,
-    topPriority: pending[0]?.priority ?? 'none',
+    unreadCount: unread.length,
+    topPriority: unread[0]?.priority ?? 'none',
     alertText: alert?.text ?? '',
     alertEmoji: alert?.emoji ?? '',
     alertBy: alert?.author ?? '',
@@ -190,21 +203,21 @@ export function viewAt(src: WidgetSource, now: number, pick: BoardPick | null): 
     index = newest;
   }
   index = Math.max(0, index);
-  // 確認了幾則之後清單變短：翻過頭就回到最後一則所在的位置
-  const n = pages[index]?.unread.length ?? 0;
+  // 完成了幾則之後清單變短：翻過頭就回到最後一則所在的位置
+  const n = pages[index]?.rows.length ?? 0;
   offset = Math.max(0, Math.min(offset, n - 1));
   return { pages, index, offset, pickedAt: pick?.at ?? 0 };
 }
 
 /**
- * 按 ‹ › 之後要停在哪：先翻同一個公布欄的下一批未讀，翻完才換下一個公布欄。
+ * 按 ‹ › 之後要停在哪：先翻同一個公布欄的下一批公告，翻完才換下一個公布欄。
  * size = 一頁放幾則（依小工具大小）。iOS 小工具不能 import 函式，BoardWidget.tsx 裡有一份一樣的邏輯。
  */
 export function stepView(view: WidgetView, step: 1 | -1, size: number): { gid: string; offset: number } | null {
   const count = view.pages.length;
   const page = view.pages[view.index];
   if (!page) return null;
-  const n = page.unread.length;
+  const n = page.rows.length;
   const start = Math.floor(view.offset / size) * size;
   if (step > 0 && start + size < n) return { gid: page.gid, offset: start + size };
   if (step < 0 && start > 0) return { gid: page.gid, offset: start - size };
@@ -214,7 +227,7 @@ export function stepView(view: WidgetView, step: 1 | -1, size: number): { gid: s
     return { gid: page.gid, offset: step > 0 ? 0 : Math.floor((n - 1) / size) * size };
   }
   const other = view.pages[(view.index + step + count) % count];
-  const m = other.unread.length;
+  const m = other.rows.length;
   return { gid: other.gid, offset: step > 0 || m === 0 ? 0 : Math.floor((m - 1) / size) * size };
 }
 

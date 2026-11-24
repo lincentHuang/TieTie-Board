@@ -23,8 +23,8 @@ interface BoardWidgetConfig {
 }
 
 /**
- * iOS 桌面 / 鎖定畫面小工具：列出每個公布欄還沒確認的公告（已讀的不顯示），
- * ‹ › 先翻同一個公布欄的下一批未讀，翻完換下一個公布欄（iOS 17 以上）。
+ * iOS 桌面 / 鎖定畫面小工具：列出每個公布欄的公告，未讀的在上、已讀的在下（淡一點），已完成（封存）的不顯示；
+ * ‹ › 先翻同一個公布欄的下一批，翻完換下一個公布欄（iOS 17 以上）。
  * 注意：'widget' 函式在獨立環境執行，不能使用外部變數、hooks 或 import 的函式，
  * 所有要顯示的文字都由 App 事先算好（見 ./widget-data.ts），翻頁邏輯跟 stepView 一樣、要一起改。
  * 按鈕的 onPress 也在小工具裡執行，回傳的值會直接成為新的 props，不需要打開 App。
@@ -50,8 +50,10 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
     );
   }
 
-  const unread = page.unread ?? [];
-  const n = unread.length;
+  const list = page.rows ?? [];
+  const n = list.length;
+  // 鎖定畫面的小尺寸只放未讀的
+  const unread = list.filter((r) => !r.read);
   const first = unread[0];
   const alerting = page.alertText !== '';
   const focusColors = { urgent: '#FF5A6E', important: '#FF9F43', none: '#9A7FE0' };
@@ -69,10 +71,10 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
   if (family === 'accessoryCircular') {
     return (
       <VStack spacing={0} modifiers={[widgetURL(page.url)]}>
-        <Image systemName={alerting || n > 0 ? 'megaphone.fill' : 'checkmark'} size={18} />
+        <Image systemName={alerting || first ? 'megaphone.fill' : 'checkmark'} size={18} />
         {alerting ? (
           <Text modifiers={[font({ size: 16, weight: 'bold' })]}>!</Text>
-        ) : n > 0 ? (
+        ) : first ? (
           <Text modifiers={[font({ size: 16, weight: 'bold' })]}>{page.unreadCount}</Text>
         ) : null}
       </VStack>
@@ -86,11 +88,11 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
         spacing={1}
         modifiers={[frame({ maxWidth: 1000, alignment: 'leading' }), widgetURL(page.url)]}>
         <Text modifiers={[font({ size: 12, weight: 'bold' }), lineLimit(1)]}>
-          {alerting ? `📣 ${page.alertBy}・${page.groupName}` : n > 0 ? `⚠︎ ${page.unreadCount} 則未讀・${page.groupName}` : page.groupName}
+          {alerting ? `📣 ${page.alertBy}・${page.groupName}` : first ? `⚠︎ ${page.unreadCount} 則未讀・${page.groupName}` : page.groupName}
         </Text>
         {alerting ? (
           <Text modifiers={[font({ size: 15, weight: 'heavy' }), lineLimit(2)]}>{alertLine}</Text>
-        ) : n > 0 ? (
+        ) : first ? (
           unread.slice(0, 2).map((r, i) => (
             <Text key={i} modifiers={[font({ size: 14, weight: 'semibold' }), lineLimit(1)]}>
               {`• ${r.title}`}
@@ -112,7 +114,7 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
   const rawOffset = pinned ? (props.pinGid === pinned.gid ? (props.pinOffset ?? 0) : 0) : (props.offset ?? 0);
   const offset = Math.max(0, Math.min(rawOffset, n - 1));
   const start = Math.floor(offset / size) * size;
-  const rows = unread.slice(start, start + size);
+  const rows = list.slice(start, start + size);
   const chunks = Math.ceil(n / size);
   const showArrows = count > 1 || n > size;
   const rowSize = small ? 13 : xl ? 20 : 15;
@@ -129,7 +131,7 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
     else if (count < 2) off = step > 0 ? 0 : Math.floor((n - 1) / size) * size;
     else {
       to = (index + step + count) % count;
-      const m = (pages[to].unread ?? []).length;
+      const m = (pages[to].rows ?? []).length;
       off = step > 0 || m === 0 ? 0 : Math.floor((m - 1) / size) * size;
     }
     return pinned ? { pinGid: page.gid, pinOffset: off } : { index: to, offset: off, pickedAt: Date.now() };
@@ -148,7 +150,7 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
   );
 
   const sub = [
-    n > 0 ? `${page.unreadCount} 則未讀` : '',
+    page.unreadCount > 0 ? `${page.unreadCount} 則未讀` : n > 0 ? '都看過了' : '',
     chunks > 1 ? `${Math.floor(start / size) + 1}/${chunks}` : '',
     !small && count > 1 ? `公布欄 ${index + 1}/${count}` : '',
   ]
@@ -224,7 +226,7 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
         </VStack>
       ) : null}
 
-      {/* 未讀清單 */}
+      {/* 公告：未讀的在上、已讀的在下（淡一點） */}
       {n === 0 ? (
         <VStack alignment="leading" spacing={2}>
           <Spacer minLength={0} />
@@ -234,7 +236,7 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
               foregroundStyle(white),
               minimumScaleFactor(0.5),
             ]}>
-            ✓ 公告都看過了
+            ✓ 沒有要看的公告
           </Text>
         </VStack>
       ) : (
@@ -242,14 +244,15 @@ const BoardWidget = (props: WidgetView, env: WidgetEnvironment<BoardWidgetConfig
           {rows.map((r, i) => (
             <HStack key={start + i} spacing={6}>
               <Image
-                systemName={r.priority === 'urgent' ? 'exclamationmark.circle.fill' : 'circle.fill'}
-                size={r.priority === 'urgent' ? rowSize : rowSize - 6}
-                color={r.priority === 'urgent' ? '#FFE0E0' : white}
+                systemName={r.read ? 'checkmark.circle' : r.priority === 'urgent' ? 'exclamationmark.circle.fill' : 'circle.fill'}
+                size={r.read || r.priority === 'urgent' ? rowSize : rowSize - 6}
+                color={r.read ? '#FFFFFF8C' : r.priority === 'urgent' ? '#FFE0E0' : white}
               />
               <Text
                 modifiers={[
-                  font({ size: rowSize, weight: 'bold' }),
+                  font({ size: rowSize, weight: r.read ? 'regular' : 'bold' }),
                   foregroundStyle(white),
+                  opacity(r.read ? 0.6 : 1),
                   lineLimit(small ? 2 : 1),
                 ]}>
                 {r.title}
